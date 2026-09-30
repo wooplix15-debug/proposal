@@ -503,19 +503,10 @@ def build_docx(data, output):
     client_name  = client_data.get("company_name") or "Client"
     project_name = client_data.get("project_name") or "Business Automation & System Implementation"
 
-    # Cover wordmark
-    top_p = doc.add_paragraph()
-    top_p.add_run(COMPANY_NAME).bold = True
-    top_p.runs[0].font.size = Pt(9.5); top_p.runs[0].font.color.rgb = RGBColor(0x1a, 0x36, 0x5d)
-    top_p.add_run("   |   Zoho Authorized Premium Partner").font.size = Pt(9)
-    top_p.runs[-1].font.color.rgb = RGBColor(0x64, 0x74, 0x8b)
-    top_p.paragraph_format.space_after = Pt(24)
-
     if os.path.exists(LOGO_PATH):
         lp = doc.add_paragraph()
-        lp.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
-        lp.add_run().add_picture(LOGO_PATH, width=Inches(2.5))
-        lp.paragraph_format.space_after = Pt(28)
+        lp.add_run().add_picture(LOGO_PATH, width=Inches(6.8))
+        lp.paragraph_format.space_after = Pt(36)
 
     for text, sz, color, after in [
         (project_name.upper(), 22, RGBColor(0x1a, 0x36, 0x5d), 6),
@@ -712,29 +703,6 @@ def build_docx(data, output):
             doc.add_paragraph().add_run(f"Commercial Terms: {com['note']}").italic = True
         doc.add_paragraph().paragraph_format.space_after = Pt(6)
 
-    # Sign-off
-    last_sec = "9" if not (com and isinstance(com, dict) and com.get("items")) else "10"
-    section_h(last_sec, "Project Governance & Formal Acceptance Sign-Off")
-    body_text("By signing below, both parties acknowledge the scope, deliverables, assumptions, and pre-requisites:", after=12)
-    sg_tbl = doc.add_table(rows=1, cols=3)
-    for row in sg_tbl.rows:
-        row.cells[0].width = Inches(3.0)
-        row.cells[1].width = Inches(1.0)
-        row.cells[2].width = Inches(3.0)
-    
-    p0 = sg_tbl.cell(0, 0).paragraphs[0]
-    p0.add_run("Accepted by Client:\n\n").bold = True
-    p0.add_run(f"{client_name}\n\n\n\n").bold = True
-    p0.add_run("Authorized Signatory\n").font.size = Pt(10)
-    p0.add_run("Name: _______________________\n").font.size = Pt(10)
-    p0.add_run("Date: _______________________\n").font.size = Pt(10)
-    
-    p2 = sg_tbl.cell(0, 2).paragraphs[0]
-    p2.add_run(f"For {COMPANY_NAME}:\n\n").bold = True
-    p2.add_run("\n\n\n\n")
-    p2.add_run("Authorized Signatory\n").font.size = Pt(10)
-    p2.add_run("Name: _______________________\n").font.size = Pt(10)
-    p2.add_run("Date: _______________________\n").font.size = Pt(10)
 
     ft = doc.add_paragraph()
     ftr = ft.add_run(f"{COMPANY_NAME}   |   {COMPANY_EMAIL}   |   {COMPANY_WEBSITE}")
@@ -820,10 +788,10 @@ table.sign td {{ border: 1px solid #cbd5e1; padding: 10px 12px; width: 50%; vert
 </tr></table>""")
 
     # Cover
-    out.append('<div style="page-break-after: always; padding-top: 12mm;">')
-    out.append(f'<div class="cover-top"><span>{esc(COMPANY_NAME)}</span><span class="cover-right">ZOHO AUTHORIZED PREMIUM PARTNER</span></div>')
+    out.append('<div style="page-break-after: always; padding-top: 5mm;">')
     if logo:
-        out.append(f'<img src="{logo}" class="cover-logo" alt="Wooplix">')
+        out.append(f'<img src="{logo}" style="width: 100%; display: block; margin-bottom: 25mm;" alt="Wooplix Logos">')
+    
     out.append(f'<div class="cover-title">{esc(project)}</div>')
     out.append('<div class="cover-sub">Project Proposal &amp; Comprehensive Scope of Work</div>')
     out.append('<div class="cover-prep">Prepared for</div>')
@@ -936,15 +904,7 @@ table.sign td {{ border: 1px solid #cbd5e1; padding: 10px 12px; width: 50%; vert
         if com.get("note"):
             out.append(f'<p class="body"><em>Commercial Terms: {esc(com["note"])}</em></p>')
 
-    # Sign-off
-    last_sec = "9" if not (com and isinstance(com, dict) and com.get("items")) else "10"
-    out.append(f'<h2 class="sh">{last_sec}. Project Governance &amp; Formal Acceptance Sign-Off</h2>')
-    out.append('<p class="body">By signing below, both parties acknowledge the scope, deliverables, assumptions, and pre-requisites:</p>')
-    out.append('<table style="width: 100%; border-collapse: collapse; margin-top: 24px;"><tr>'
-               f'<td style="width: 45%; vertical-align: top; font-size: 9pt;"><strong>Accepted by Client:</strong><br><br><strong>{esc(client_name)}</strong><br><br><br><br>Authorized Signatory<br><br>Name: _______________________<br><br>Date: _______________________</td>'
-               '<td style="width: 10%;"></td>'
-               f'<td style="width: 45%; vertical-align: top; font-size: 9pt;"><strong>For {esc(COMPANY_NAME)}:</strong><br><br><br><br><br><br>Authorized Signatory<br><br>Name: _______________________<br><br>Date: _______________________</td>'
-               '</tr></table>')
+
     out.append('</body></html>')
     return "".join(out)
 
