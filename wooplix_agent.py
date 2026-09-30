@@ -511,22 +511,21 @@ def build_docx(data, output):
     if has_main or has_badge:
         logo_tbl = doc.add_table(rows=1, cols=3)
         for row in logo_tbl.rows:
-            row.cells[0].width = Inches(3.2)
-            row.cells[1].width = Inches(0.6)
-            row.cells[2].width = Inches(3.2)
+            row.cells[0].width = Inches(4.2)
+            row.cells[1].width = Inches(0.4)
+            row.cells[2].width = Inches(2.4)
         if has_main:
             p_l = logo_tbl.cell(0, 0).paragraphs[0]
-            p_l.add_run().add_picture(LOGO_MAIN_PATH, width=Inches(3.0))
+            p_l.add_run().add_picture(LOGO_MAIN_PATH, width=Inches(3.8))
         if has_badge:
             p_r = logo_tbl.cell(0, 2).paragraphs[0]
-            import docx.enum.text
             p_r.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.RIGHT
-            p_r.add_run().add_picture(LOGO_BADGE_PATH, width=Inches(2.2))
-        doc.add_paragraph().paragraph_format.space_after = Pt(30)
+            p_r.add_run().add_picture(LOGO_BADGE_PATH, width=Inches(2.0))
+        doc.add_paragraph().paragraph_format.space_after = Pt(24)
 
     for text, sz, color, after in [
-        (project_name.upper(), 22, RGBColor(0x1a, 0x36, 0x5d), 6),
-        ("PROJECT PROPOSAL & COMPREHENSIVE SCOPE OF WORK", 11, RGBColor(0x00, 0x80, 0x80), 36),
+        (project_name, 20, RGBColor(0x1a, 0x36, 0x5d), 6),
+        ("Project Proposal & Scope of Work", 11, RGBColor(0x47, 0x55, 0x69), 36),
     ]:
         p = doc.add_paragraph()
         p.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
@@ -821,16 +820,18 @@ table.sign td {{ border: 1px solid #cbd5e1; padding: 10px 12px; width: 50%; vert
     # Cover
     out.append('<div style="page-break-after: always; padding-top: 5mm;">')
     # Dual-logo row: Wooplix wordmark left, Partner badge right
-    out.append('<table style="width:100%; border-collapse:collapse; margin-bottom: 22mm;"><tr>')
-    out.append(f'<td style="width:55%; vertical-align:middle;">{"<img src=" + chr(34) + logo_main + chr(34) + " style=" + chr(34) + "height:42px;" + chr(34) + " alt=" + chr(34) + "Wooplix" + chr(34) + ">" if logo_main else ""}</td>')
-    out.append(f'<td style="width:45%; vertical-align:middle; text-align:right;">{"<img src=" + chr(34) + logo_badge + chr(34) + " style=" + chr(34) + "height:38px;" + chr(34) + " alt=" + chr(34) + "Zoho Partner" + chr(34) + ">" if logo_badge else ""}</td>')
-    out.append('</tr></table>')
-    
+    main_img  = f'<img src="{logo_main}" style="height:65px;" alt="Wooplix">'   if logo_main  else ''
+    badge_img = f'<img src="{logo_badge}" style="height:42px;" alt="Zoho Partner">' if logo_badge else ''
+    out.append(
+        f'<table style="width:100%; border-collapse:collapse; margin-bottom: 20mm;"><tr>'
+        f'<td style="width:60%; vertical-align:middle;">{main_img}</td>'
+        f'<td style="width:40%; vertical-align:middle; text-align:right;">{badge_img}</td>'
+        f'</tr></table>'
+    )
     out.append(f'<div class="cover-title">{esc(project)}</div>')
-    out.append('<div class="cover-sub">Project Proposal &amp; Comprehensive Scope of Work</div>')
+    out.append('<div class="cover-sub">Project Proposal &amp; Scope of Work</div>')
     out.append('<div class="cover-prep">Prepared for</div>')
     out.append(f'<div class="cover-client">{esc(client_name)}</div>')
-    out.append('<div class="cover-desc">A complete implementation roadmap, functional specification matrix, integration architecture, and delivery plan.</div>')
     out.append('<table class="cover-meta"><tr>'
                f'<td><span class="lbl">PRESENTED BY:</span><span class="val">{esc(COMPANY_NAME)}</span></td>'
                f'<td><span class="lbl">PRESENTED TO:</span><span class="val">{esc(client_name)}</span></td>'
