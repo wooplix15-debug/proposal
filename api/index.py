@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import wooplix_agent as agent
@@ -44,13 +44,39 @@ def _build_pdf_with_existing_template(proposal, target):
     return agent.build_pdf(proposal, str(target))
 
 
+@app.get("/", response_class=HTMLResponse)
+@app.get("/index.html", response_class=HTMLResponse)
+def index_page():
+    for candidate in [
+        Path(__file__).resolve().parents[1] / "public" / "index.html",
+        Path(__file__).resolve().parents[1] / "index.html",
+    ]:
+        if candidate.exists():
+            return HTMLResponse(content=candidate.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>Wooplix Proposal Agent</h1>")
+
+
+@app.get("/wooplix_logo.png")
+def logo():
+    for candidate in [
+        Path(__file__).resolve().parents[1] / "public" / "wooplix_logo.png",
+        Path(__file__).resolve().parents[1] / "wooplix_logo.png",
+    ]:
+        if candidate.exists():
+            return FileResponse(str(candidate), media_type="image/png")
+    raise HTTPException(status_code=404, detail="Logo not found")
+
 
 @app.get("/api/health")
+@app.get("/health")
+@app.get("/api/index.py")
 def health():
     return {"ok": True, "configured": bool(os.environ.get("GROQ_API_KEY")), "max_files": MAX_FILES}
 
 
 @app.post("/api/generate")
+@app.post("/generate")
+@app.post("/api/index.py")
 async def generate(files: list[UploadFile] = File(...)):
     if not os.environ.get("GROQ_API_KEY"):
         raise HTTPException(status_code=503, detail="The proposal service is not configured yet. Add GROQ_API_KEY in Vercel project settings.")
