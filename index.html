@@ -240,6 +240,50 @@
       background: #eef3ff;
       color: var(--blue);
     }
+    /* Tab bar */
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1.5px solid #dbe2ed;
+      border-radius: 10px;
+      background: #fafbfd;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: #4b5d78;
+      font-family: "Inter", sans-serif;
+      transition: all 0.18s;
+    }
+    .tab-btn:hover { border-color: #83a0e6; background: #f4f7fd; }
+    .tab-btn.active {
+      border-color: var(--blue);
+      background: #eef3ff;
+      color: var(--blue);
+    }
+    /* Text textarea */
+    #requirementText {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 14px 16px;
+      border: 1.5px solid #dbe2ed;
+      border-radius: 12px;
+      font-size: 13px;
+      font-family: "Inter", sans-serif;
+      color: #2a3752;
+      line-height: 1.6;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.18s;
+      background: #fafbfd;
+      margin-bottom: 4px;
+    }
+    #requirementText:focus { border-color: var(--blue); }
+    #requirementText::placeholder { color: #a5b0c5; }
     .submit-btn {
       width: 100%;
       background: var(--blue);
@@ -349,24 +393,43 @@
 
     <div class="intro">
       <h1>Turn requirements into a proposal.</h1>
-      <p>Upload your client requirement document to generate a branded proposal.</p>
+      <p>Upload a file or paste your client requirement text to generate a branded proposal.</p>
     </div>
 
     <div class="card">
-      <div class="drop-zone" id="dropZone">
-        <div class="drop-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3"/>
-          </svg>
-        </div>
-        <h3>Drop your requirement file here</h3>
-        <p>Supports PDF, DOCX, TXT or Markdown</p>
-        <button type="button" class="browse-btn" id="browseBtn">Choose File</button>
+
+      <!-- Tab switcher -->
+      <div class="tab-bar">
+        <button class="tab-btn active" id="tabFile">📁 Upload File</button>
+        <button class="tab-btn" id="tabText">✏️ Paste Text</button>
       </div>
 
-      <input id="filePicker" type="file" accept=".pdf,.docx,.txt,.md" hidden>
-      <div class="file-list" id="fileList"></div>
+      <!-- File upload panel -->
+      <div id="panelFile">
+        <div class="drop-zone" id="dropZone">
+          <div class="drop-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3"/>
+            </svg>
+          </div>
+          <h3>Drop your requirement file here</h3>
+          <p>Supports PDF, DOC, DOCX, TXT or Markdown · Max 4 MB</p>
+          <button type="button" class="browse-btn" id="browseBtn">Choose File</button>
+        </div>
+        <input id="filePicker" type="file" accept=".pdf,.doc,.docx,.txt,.md" hidden>
+        <div class="file-list" id="fileList"></div>
+      </div>
 
+      <!-- Text paste panel -->
+      <div id="panelText" style="display:none;">
+        <textarea
+          id="requirementText"
+          placeholder="Paste your client requirement here…&#10;&#10;Example: Client needs a mobile app for inventory management with barcode scanning, real-time stock updates, and reporting dashboard for 50 warehouse users."
+          rows="8"
+        ></textarea>
+      </div>
+
+      <!-- Format picker -->
       <div class="format-picker">
         <label class="format-label">Download format</label>
         <div class="format-options">
@@ -403,10 +466,45 @@
     const resultClient = document.querySelector('#resultClient');
     const resultFile = document.querySelector('#resultFile');
     const downloadAgainBtn = document.querySelector('#downloadAgainBtn');
+    const requirementText = document.querySelector('#requirementText');
+    const panelFile = document.querySelector('#panelFile');
+    const panelText = document.querySelector('#panelText');
+    const tabFile = document.querySelector('#tabFile');
+    const tabText = document.querySelector('#tabText');
 
     let selectedFile = null;
     let selectedFormat = 'pdf';
+    let activeTab = 'file';
 
+    // Tab switching
+    tabFile.onclick = () => {
+      activeTab = 'file';
+      tabFile.classList.add('active');
+      tabText.classList.remove('active');
+      panelFile.style.display = '';
+      panelText.style.display = 'none';
+      updateSubmitState();
+    };
+    tabText.onclick = () => {
+      activeTab = 'text';
+      tabText.classList.add('active');
+      tabFile.classList.remove('active');
+      panelText.style.display = '';
+      panelFile.style.display = 'none';
+      updateSubmitState();
+    };
+
+    requirementText.oninput = updateSubmitState;
+
+    function updateSubmitState() {
+      if (activeTab === 'file') {
+        generateBtn.disabled = !selectedFile;
+      } else {
+        generateBtn.disabled = !requirementText.value.trim();
+      }
+    }
+
+    // Format picker
     document.querySelectorAll('.format-btn').forEach(btn => {
       btn.onclick = () => {
         document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
@@ -415,23 +513,16 @@
       };
     });
 
+    // File upload handlers
     browseBtn.onclick = (e) => { e.stopPropagation(); filePicker.click(); };
     dropZone.onclick = (e) => { if (e.target !== browseBtn) filePicker.click(); };
-
-    filePicker.onchange = () => {
-      if (filePicker.files && filePicker.files[0]) {
-        setFile(filePicker.files[0]);
-      }
-    };
-
+    filePicker.onchange = () => { if (filePicker.files && filePicker.files[0]) setFile(filePicker.files[0]); };
     dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('over'); };
-    dropZone.ondragleave = () => { dropZone.classList.remove('over'); };
+    dropZone.ondragleave = () => dropZone.classList.remove('over');
     dropZone.ondrop = (e) => {
       e.preventDefault();
       dropZone.classList.remove('over');
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        setFile(e.dataTransfer.files[0]);
-      }
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
     };
 
     function setFile(f) {
@@ -441,16 +532,12 @@
 
     function renderFile() {
       fileList.innerHTML = '';
-      if (!selectedFile) {
-        generateBtn.disabled = true;
-        return;
-      }
-      generateBtn.disabled = false;
+      if (!selectedFile) { updateSubmitState(); return; }
       const ext = selectedFile.name.split('.').pop();
       const item = document.createElement('div');
       item.className = 'file-item';
       item.innerHTML = `
-        <div class="file-ext">${ext}</div>
+        <div class="file-ext">${ext.toUpperCase()}</div>
         <div class="file-details">
           <strong>${selectedFile.name}</strong>
           <span>${(selectedFile.size / 1024).toFixed(0)} KB</span>
@@ -464,25 +551,26 @@
         renderFile();
       };
       fileList.appendChild(item);
+      updateSubmitState();
     }
 
     generateBtn.onclick = async () => {
-      if (!selectedFile) return;
-
       const fd = new FormData();
-      fd.append('files', selectedFile, selectedFile.name);
+      if (activeTab === 'file' && selectedFile) {
+        fd.append('files', selectedFile, selectedFile.name);
+      } else if (activeTab === 'text' && requirementText.value.trim()) {
+        fd.append('text', requirementText.value.trim());
+      } else {
+        return;
+      }
 
       generateBtn.disabled = true;
-      generateBtn.textContent = 'Generating proposal…';
-      statusMsg.textContent = 'Drafting your branded proposal…';
+      generateBtn.textContent = 'Drafting proposal…';
+      statusMsg.textContent = 'Analyzing requirement and generating branded proposal…';
       resultBox.style.display = 'none';
 
       try {
-        const res = await fetch(`/api/generate?format=${selectedFormat}`, {
-          method: 'POST',
-          body: fd
-        });
-
+        const res = await fetch(`/api/generate?format=${selectedFormat}`, { method: 'POST', body: fd });
         if (!res.ok) {
           const info = await res.json().catch(() => ({}));
           throw new Error(info.detail || 'Generation failed. Please try again.');
@@ -494,33 +582,26 @@
           const match = disp.match(/filename="?([^";]+)"?/);
           if (match) filename = match[1];
         }
-        if (!filename) {
-          filename = selectedFormat === 'docx' ? 'Wooplix_Proposal.docx' : (selectedFormat === 'zip' ? 'Wooplix_Results.zip' : 'Wooplix_Proposal.pdf');
-        }
+        if (!filename) filename = selectedFormat === 'docx' ? 'Wooplix_Proposal.docx' : (selectedFormat === 'zip' ? 'Wooplix_Results.zip' : 'Wooplix_Proposal.pdf');
 
         const clientName = res.headers.get('x-proposal-client') || 'Client';
-
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.append(a);
-        a.click();
-        a.remove();
+        a.href = url; a.download = filename;
+        document.body.append(a); a.click(); a.remove();
 
         resultBox.style.display = 'block';
         resultClient.textContent = clientName;
         resultFile.textContent = `Downloaded: ${filename}`;
         downloadAgainBtn.href = url;
         downloadAgainBtn.download = filename;
-
-        statusMsg.textContent = `✓ Done! Downloaded to your computer.`;
+        statusMsg.textContent = `✓ Done! Proposal downloaded to your computer.`;
       } catch (err) {
         statusMsg.textContent = err.message;
       } finally {
         generateBtn.textContent = 'Generate Proposal →';
-        generateBtn.disabled = !selectedFile;
+        updateSubmitState();
       }
     };
   </script>

@@ -124,6 +124,35 @@ def extract_requirement(path_or_dash):
                 if any(cs):
                     chunks.append(" | ".join(cs))
         return "\n".join(chunks)
+    if suffix == ".doc":
+        try:
+            from docx import Document
+            d = Document(str(p))
+            chunks = [x.text.strip() for x in d.paragraphs if x.text.strip()]
+            if chunks:
+                return "\n".join(chunks)
+        except Exception:
+            pass
+        raw = p.read_bytes()
+        text_parts = []
+        for m in re.finditer(b'(?:[\x20-\x7e]\x00){4,}', raw):
+            try:
+                t = m.group(0).decode('utf-16le').strip()
+                if len(t) > 3:
+                    text_parts.append(t)
+            except Exception:
+                pass
+        for m in re.finditer(b'[\x20-\x7e\n\r\t]{5,}', raw):
+            try:
+                t = m.group(0).decode('latin1').strip()
+                if len(t) > 4 and not any(t.startswith(x) for x in ['WordDocument', 'CompObj', 'SummaryInfo', 'Normal.dotm']):
+                    text_parts.append(t)
+            except Exception:
+                pass
+        extracted = "\n".join(dict.fromkeys(text_parts)).strip()
+        if extracted:
+            return extracted
+        return p.read_text(errors="ignore").strip()
     raise SystemExit(f"Unsupported requirement type: {suffix}")
 
 
