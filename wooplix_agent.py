@@ -719,9 +719,20 @@ def build_docx(data, output):
         doc.add_paragraph().paragraph_format.space_after = Pt(6)
 
 
-    ft = doc.add_paragraph()
-    ftr = ft.add_run(f"{COMPANY_NAME}   |   {COMPANY_EMAIL}   |   {COMPANY_WEBSITE}")
-    ftr.font.size = Pt(8.5); ftr.font.color.rgb = RGBColor(0x64, 0x74, 0x8b)
+    # Footer bar
+    doc.add_paragraph().paragraph_format.space_before = Pt(18)
+    ft_tbl = doc.add_table(rows=1, cols=1)
+    ft_tbl.style = "Table Grid"
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+    ft_cell = ft_tbl.cell(0, 0)
+    tcPr = ft_cell._tc.get_or_add_tcPr()
+    tcPr.append(parse_xml(f'<w:shd {nsdecls("w")} w:fill="1a365d"/>'))
+    ft_cell.width = Inches(7.0)
+    fp = ft_cell.paragraphs[0]
+    fp.paragraph_format.space_before = Pt(4); fp.paragraph_format.space_after = Pt(4)
+    fr = fp.add_run(f"{COMPANY_NAME}   |   {COMPANY_EMAIL}   |   {COMPANY_WEBSITE}")
+    fr.font.size = Pt(8); fr.font.color.rgb = RGBColor(0xff, 0xff, 0xff); fr.bold = True
     doc.save(output)
     return output
 
@@ -768,25 +779,22 @@ def build_html(data):
     out = []
     out.append(f"""<!doctype html><html><head><meta charset="utf-8">
 <style>
-@page {{ size: A4; margin: 22mm 15mm 20mm 15mm; }}
+@page {{ size: A4; margin: 24mm 15mm 26mm 15mm; }}
 body {{ font-family: 'DejaVu Sans', sans-serif; font-size: 9pt; color: #1e293b; line-height: 1.5; }}
-table.hdr-tbl {{ position: fixed; top: -16mm; left: 0; right: 0; width: 100%;
-    border-bottom: 1.5px solid #1a365d; font-size: 7.5pt; color: #64748b; padding-bottom: 2px; }}
-table.ftr-tbl {{ position: fixed; bottom: -14mm; left: 0; right: 0; width: 100%;
-    border-top: 1.5px solid #1a365d; font-size: 7.5pt; color: #64748b; padding-top: 2px; }}
-table.hdr-tbl td, table.ftr-tbl td {{ padding: 1px 2px; }}
+table.hdr-tbl {{ position: fixed; top: -18mm; left: 0; right: 0; width: 100%; font-size: 7.5pt; color: #64748b; border-bottom: 1.5px solid #e2e8f0; }}
+table.ftr-tbl {{ position: fixed; bottom: -20mm; left: 0; right: 0; width: 100%; font-size: 7.5pt; }}
+table.hdr-tbl td {{ padding: 2px 0; color: #94a3b8; }}
+table.ftr-tbl td {{ padding: 0; }}
+.ftr-inner {{ background-color: #1a365d; color: #e2e8f0; padding: 4px 8px; font-size: 7.5pt; }}
 .pg:before {{ content: counter(page); }}
-.cover-top {{ border-bottom: 2px solid #1a365d; padding-bottom: 4mm; margin-bottom: 14mm; font-size: 8.5pt; color: #1a365d; font-weight: bold; }}
-.cover-right {{ float: right; color: #008080; }}
-.cover-logo {{ width: 55mm; display: block; margin: 0 auto 10mm auto; }}
-.cover-title {{ font-size: 19pt; font-weight: bold; color: #1a365d; line-height: 1.25; margin-bottom: 4mm; text-transform: uppercase; text-align: center; }}
-.cover-sub {{ font-size: 10.5pt; font-weight: bold; color: #008080; margin-bottom: 12mm; text-transform: uppercase; text-align: center; }}
-.cover-prep {{ font-size: 9pt; color: #64748b; margin-bottom: 2mm; text-align: center; }}
-.cover-client {{ font-size: 14pt; font-weight: bold; color: #0f172a; margin-bottom: 6mm; text-align: center; }}
-.cover-desc {{ font-size: 9pt; font-style: italic; color: #475569; margin: 0 auto 14mm auto; text-align: center; }}
-table.cover-meta {{ width: 100%; border-collapse: collapse; margin-top: 18mm; }}
-table.cover-meta td {{ border: 1px solid #cbd5e1; background: #f8fafc; padding: 7px 9px; width: 25%; vertical-align: top; }}
-.lbl {{ font-size: 7.5pt; font-weight: bold; color: #1a365d; text-transform: uppercase; display: block; margin-bottom: 2px; }}
+.cover-title {{ font-size: 18pt; font-weight: bold; color: #1a365d; line-height: 1.3; margin: 0 0 3mm 0; text-align: center; }}
+.cover-sub {{ font-size: 9.5pt; color: #475569; margin: 0 0 14mm 0; text-align: center; letter-spacing: 0.5px; }}
+.cover-divider {{ border: none; border-top: 1.5px solid #e2e8f0; margin: 8mm 20mm; }}
+.cover-prep {{ font-size: 8pt; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2mm; text-align: center; }}
+.cover-client {{ font-size: 16pt; font-weight: bold; color: #0f172a; margin-bottom: 10mm; text-align: center; }}
+table.cover-meta {{ width: 100%; border-collapse: collapse; margin-top: 6mm; }}
+table.cover-meta td {{ border: 1px solid #e2e8f0; background: #f8fafc; padding: 8px 10px; width: 25%; vertical-align: top; }}
+.lbl {{ font-size: 7pt; font-weight: bold; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 3px; }}
 .val {{ font-size: 9pt; font-weight: 600; color: #1e293b; }}
 h2.sh {{ background-color: #1a365d; color: #fff; padding: 6px 10px; font-size: 11pt; font-weight: bold; border-radius: 3px; margin: 18px 0 8px 0; }}
 h3.mh {{ color: #008080; font-size: 10pt; font-weight: bold; border-bottom: 1.5px solid #008080; padding-bottom: 3px; margin: 14px 0 6px 0; }}
@@ -803,40 +811,44 @@ ul.cat-ul li {{ font-size: 9pt; margin-bottom: 3px; }}
 .ib h4 {{ margin: 0 0 4px 0; font-size: 9pt; color: #008080; font-weight: bold; }}
 .ib ul {{ margin: 0; padding-left: 16px; }}
 .ib li {{ font-size: 8.5pt; color: #334155; margin-bottom: 2px; }}
-table.sign {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-table.sign th {{ background: #1a365d; color: #fff; padding: 6px 10px; font-size: 8.5pt; text-align: left; border: 1px solid #1a365d; }}
-table.sign td {{ border: 1px solid #cbd5e1; padding: 10px 12px; width: 50%; vertical-align: top; font-size: 8.5pt; line-height: 2.0; }}
 </style></head><body>""")
 
     out.append(f"""<table class="hdr-tbl"><tr>
 <td>{esc(hdr)} &#8212; Project Proposal &amp; SOW</td>
-<td style="text-align:right;">{esc(COMPANY_NAME)} &nbsp;|&nbsp; Page <span class="pg"></span></td>
+<td style="text-align:right;color:#94a3b8;">Page <span class="pg"></span></td>
 </tr></table>""")
     out.append(f"""<table class="ftr-tbl"><tr>
-<td>{esc(COMPANY_EMAIL)} &nbsp;|&nbsp; {esc(COMPANY_WEBSITE)}</td>
-<td style="text-align:right;">Confidential &#8212; For Client Review Only</td>
+<td colspan="2"><div class="ftr-inner">
+<table style="width:100%;border-collapse:collapse;"><tr>
+<td style="color:#e2e8f0;">{esc(COMPANY_NAME)}</td>
+<td style="text-align:center;color:#94a3b8;">{esc(COMPANY_EMAIL)}</td>
+<td style="text-align:right;color:#94a3b8;">{esc(COMPANY_WEBSITE)}</td>
+</tr></table>
+</div></td>
 </tr></table>""")
 
     # Cover
-    out.append('<div style="page-break-after: always; padding-top: 5mm;">')
-    # Dual-logo row: Wooplix wordmark left, Partner badge right
-    main_img  = f'<img src="{logo_main}" style="height:65px;" alt="Wooplix">'   if logo_main  else ''
-    badge_img = f'<img src="{logo_badge}" style="height:42px;" alt="Zoho Partner">' if logo_badge else ''
+    out.append('<div style="page-break-after: always; padding-top: 8mm;">')
+    # Dual-logo row
+    main_img  = f'<img src="{logo_main}" style="height:65px;" alt="Wooplix">'    if logo_main  else ''
+    badge_img = f'<img src="{logo_badge}" style="height:42px;" alt="Zoho Partner">'\
+                if logo_badge else ''
     out.append(
-        f'<table style="width:100%; border-collapse:collapse; margin-bottom: 20mm;"><tr>'
+        f'<table style="width:100%; border-collapse:collapse; margin-bottom: 18mm;"><tr>'
         f'<td style="width:60%; vertical-align:middle;">{main_img}</td>'
         f'<td style="width:40%; vertical-align:middle; text-align:right;">{badge_img}</td>'
         f'</tr></table>'
     )
     out.append(f'<div class="cover-title">{esc(project)}</div>')
     out.append('<div class="cover-sub">Project Proposal &amp; Scope of Work</div>')
+    out.append('<hr class="cover-divider">')
     out.append('<div class="cover-prep">Prepared for</div>')
     out.append(f'<div class="cover-client">{esc(client_name)}</div>')
     out.append('<table class="cover-meta"><tr>'
-               f'<td><span class="lbl">PRESENTED BY:</span><span class="val">{esc(COMPANY_NAME)}</span></td>'
-               f'<td><span class="lbl">PRESENTED TO:</span><span class="val">{esc(client_name)}</span></td>'
-               f'<td><span class="lbl">DATE:</span><span class="val">{esc(_ordinal_day())}</span></td>'
-               f'<td><span class="lbl">DOCUMENT STATUS:</span><span class="val">{esc(data.get("status","DRAFT"))}</span></td>'
+               f'<td><span class="lbl">Presented by</span><span class="val">{esc(COMPANY_NAME)}</span></td>'
+               f'<td><span class="lbl">Presented to</span><span class="val">{esc(client_name)}</span></td>'
+               f'<td><span class="lbl">Date</span><span class="val">{esc(_ordinal_day())}</span></td>'
+               f'<td><span class="lbl">Status</span><span class="val">{esc(data.get("status","Draft"))}</span></td>'
                '</tr></table>')
     out.append('</div>')
 
