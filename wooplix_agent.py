@@ -415,28 +415,33 @@ def build_html(data):
     parts = []
     parts.append(f"""<!doctype html><html><head><meta charset="utf-8"><style>
 @page {{ size: A4; margin: 22mm 18mm 18mm 18mm; }}
-body {{ font-family:'DejaVu Sans', sans-serif; font-size:10pt; color:#111; line-height:1.4; }}
-.hdr {{ position:fixed; top:-15mm; left:0; right:0; font-size:7.5pt; color:#555;
-        border-bottom:0.6pt solid #D0D0D0; padding-bottom:2mm; }}
-.ftr {{ position:fixed; bottom:-13mm; left:0; right:0; font-size:7.5pt; color:#555;
-        border-top:0.6pt solid #D0D0D0; padding-top:2mm; }}
+body {{ font-family:'DejaVu Sans', sans-serif; font-size:10pt; color:#222; line-height:1.5; }}
+.hdr {{ position:fixed; top:-15mm; left:0; right:0; font-size:8pt; color:#555;
+        border-bottom:1px solid #1a365d; padding-bottom:2mm; }}
+.ftr {{ position:fixed; bottom:-13mm; left:0; right:0; font-size:8pt; color:#555;
+        border-top:1px solid #1a365d; padding-top:2mm; }}
 .hdr .r, .ftr .r {{ float:right; }}
 .pg:before {{ content: counter(page); }}
-.tagline {{ font-size:8.5pt; color:#555; margin:2px 0 8px 0; }}
-table.cover {{ width:100%; border-collapse:collapse; margin:6px 0 10px 0; }}
-table.cover td {{ border:0.6pt solid #D0D0D0; padding:5px 6px; vertical-align:top; font-size:9pt; }}
-table.cover .lbl {{ font-weight:bold; font-size:8.5pt; }}
-h1.title {{ font-size:17pt; margin:6px 0 4px 0; }}
-h2 {{ font-size:13pt; margin:14px 0 4px 0; }}
-h3.prod {{ font-size:12pt; margin:10px 0 2px 0; }}
-p.area {{ font-weight:bold; font-size:10.5pt; margin:7px 0 2px 0; }}
-p.body {{ margin:0 0 6px 0; }}
-ul {{ margin:2px 0 6px 0; padding-left:16px; }}
-li {{ font-size:10pt; margin:0 0 2px 0; }}
-table.comm {{ width:100%; border-collapse:collapse; margin:6px 0; }}
-table.comm th {{ background:#EDEDED; border:0.6pt solid #D0D0D0; padding:4px 6px; font-size:9pt; text-align:left; }}
-table.comm td {{ border:0.6pt solid #D0D0D0; padding:4px 6px; font-size:9pt; }}
-.note {{ font-size:8.5pt; color:#555; }}
+.tagline {{ font-size:9pt; color:#555; margin:2px 0 8px 0; font-style:italic; }}
+table.cover {{ width:100%; border-collapse:collapse; margin:20px 0 10px 0; }}
+table.cover td {{ border-bottom: 2px solid #1a365d; padding:8px 6px; vertical-align:top; font-size:10pt; }}
+table.cover .lbl {{ font-weight:bold; font-size:8.5pt; color:#1a365d; text-transform:uppercase; }}
+h1.title {{ font-size:20pt; margin:15px 0 10px 0; color:#1a365d; font-weight:bold; }}
+h2 {{ font-size:12pt; margin:18px 0 8px 0; background-color:#1a365d; color:#ffffff; padding:6px 10px; border-radius:3px; }}
+h3.prod {{ font-size:12pt; margin:12px 0 4px 0; color:#008080; border-bottom:1px solid #eee; padding-bottom:2px; }}
+p.area {{ font-weight:bold; font-size:10.5pt; margin:8px 0 2px 0; color:#333; }}
+p.body {{ margin:0 0 8px 0; }}
+ul {{ margin:4px 0 8px 0; padding-left:18px; }}
+li {{ font-size:10pt; margin:0 0 4px 0; }}
+table.comm {{ width:100%; border-collapse:collapse; margin:10px 0; }}
+table.comm th {{ background:#1a365d; color:#fff; border:1px solid #1a365d; padding:6px 8px; font-size:9.5pt; text-align:left; font-weight:bold; }}
+table.comm td {{ border:1px solid #ddd; padding:6px 8px; font-size:9.5pt; }}
+table.comm tr:nth-child(even) {{ background-color: #f9f9f9; }}
+.info-box {{ background-color:#f0f7f7; border-left:4px solid #008080; padding:10px; margin:10px 0; }}
+.info-box ul {{ margin-bottom:0; }}
+.note {{ font-size:8.5pt; color:#555; font-style:italic; }}
+.sign-off {{ margin-top:40px; width:100%; border-collapse:collapse; }}
+.sign-off td {{ padding-top:40px; border-top:1px solid #000; width:45%; vertical-align:top; font-size:10pt; }}
 </style></head><body>""")
 
     parts.append(f'<div class="hdr"><span>{esc(hdr)} — Proposal</span>'
@@ -470,31 +475,34 @@ table.comm td {{ border:0.6pt solid #D0D0D0; padding:4px 6px; font-size:9pt; }}
             if tasks:
                 parts.append('<ul>' + "".join(f'<li>{esc(t)}</li>' for t in tasks) + '</ul>')
 
-    parts.append('<h2>Pre-requisites</h2>')
-    parts.append('<p class="body">To begin the implementation, we will require:</p>')
+    parts.append('<h2>Pre-requisites & Deliverables</h2>')
     pre = [x for x in (data.get("prerequisites", []) or []) if str(x).strip()]
     if pre:
-        parts.append('<ul>' + "".join(f'<li>{esc(x)}</li>' for x in pre) + '</ul>')
+        parts.append('<div class="info-box"><p class="area" style="margin-top:0;">Client Pre-requisites</p>')
+        parts.append('<p class="body">To begin the implementation, we will require the following from the client:</p>')
+        parts.append('<ul>' + "".join(f'<li>{esc(x)}</li>' for x in pre) + '</ul></div>')
 
-    parts.append('<h2>Deliverables</h2>')
     dl = [x for x in (data.get("deliverables", []) or []) if str(x).strip()]
     if dl:
+        parts.append('<p class="area">Project Deliverables</p>')
         parts.append('<ul>' + "".join(f'<li>{esc(x)}</li>' for x in dl) + '</ul>')
 
     op = [x for x in (data.get("open_points") or []) if str(x).strip()]
     if op:
         parts.append('<h2>Points to be Finalized During Discovery</h2>')
-        parts.append('<ul>' + "".join(f'<li>{esc(x)}</li>' for x in op) + '</ul>')
+        parts.append('<div class="info-box"><ul>' + "".join(f'<li>{esc(x)}</li>' for x in op) + '</ul></div>')
 
     tl = data.get("timeline") or None
     if tl:
         parts.append('<h2>Indicative Timeline</h2>')
         ph = [p for p in (tl.get("phases", []) or []) if str(p.get("phase", "")).strip()]
         if ph:
-            parts.append('<ul>' + "".join(
-                f'<li>{esc(p.get("phase",""))} – {esc(p.get("duration",""))}</li>' for p in ph) + '</ul>')
+            parts.append('<table class="comm"><tr><th>Phase</th><th>Duration</th></tr>')
+            for p in ph:
+                parts.append(f'<tr><td>{esc(p.get("phase",""))}</td><td>{esc(p.get("duration",""))}</td></tr>')
+            parts.append('</table>')
         if tl.get("overall"):
-            parts.append(f'<p class="body">Overall: {esc(tl["overall"])}</p>')
+            parts.append(f'<p class="body"><strong>Overall Duration:</strong> {esc(tl["overall"])}</p>')
 
     com = data.get("commercials") or None
     if com:
@@ -510,6 +518,7 @@ table.comm td {{ border:0.6pt solid #D0D0D0; padding:4px 6px; font-size:9pt; }}
         if com.get("note"):
             parts.append(f'<p class="note">{esc(com["note"])}</p>')
 
+    parts.append('<br><table class="sign-off"><tr><td><strong>Accepted by Client</strong><br><br>Name:<br>Date:</td><td style="width:10%; border:none;"></td><td><strong>For Wooplix Technologies</strong><br><br>Name:<br>Date:</td></tr></table>')
     parts.append('</body></html>')
     return "".join(parts)
 
