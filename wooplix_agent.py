@@ -25,7 +25,9 @@ import subprocess
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-LOGO_PATH = str(HERE / "wooplix_logo.png")
+LOGO_PATH        = str(HERE / "wooplix_logo.png")        # legacy (partner badge)
+LOGO_MAIN_PATH   = str(HERE / "wooplix_main_logo.png")   # main Wooplix wordmark
+LOGO_BADGE_PATH  = str(HERE / "wooplix_partner_badge.png") # Zoho Authorized Partner badge
 PHP_SCRIPT = str(HERE / "html_to_pdf.php")
 
 COMPANY_NAME = "Wooplix Technologies Private Limited"
@@ -503,10 +505,24 @@ def build_docx(data, output):
     client_name  = client_data.get("company_name") or "Client"
     project_name = client_data.get("project_name") or "Business Automation & System Implementation"
 
-    if os.path.exists(LOGO_PATH):
-        lp = doc.add_paragraph()
-        lp.add_run().add_picture(LOGO_PATH, width=Inches(6.8))
-        lp.paragraph_format.space_after = Pt(36)
+    # Cover logos — main wordmark left, partner badge right
+    has_main  = os.path.exists(LOGO_MAIN_PATH)
+    has_badge = os.path.exists(LOGO_BADGE_PATH)
+    if has_main or has_badge:
+        logo_tbl = doc.add_table(rows=1, cols=3)
+        for row in logo_tbl.rows:
+            row.cells[0].width = Inches(3.2)
+            row.cells[1].width = Inches(0.6)
+            row.cells[2].width = Inches(3.2)
+        if has_main:
+            p_l = logo_tbl.cell(0, 0).paragraphs[0]
+            p_l.add_run().add_picture(LOGO_MAIN_PATH, width=Inches(3.0))
+        if has_badge:
+            p_r = logo_tbl.cell(0, 2).paragraphs[0]
+            import docx.enum.text
+            p_r.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.RIGHT
+            p_r.add_run().add_picture(LOGO_BADGE_PATH, width=Inches(2.2))
+        doc.add_paragraph().paragraph_format.space_after = Pt(30)
 
     for text, sz, color, after in [
         (project_name.upper(), 22, RGBColor(0x1a, 0x36, 0x5d), 6),
@@ -712,10 +728,24 @@ def build_docx(data, output):
 
 
 # --------------------------------------------------------------------------- HTML + PDF (dompdf)
-def _logo_data_uri():
-    if not os.path.exists(LOGO_PATH):
+def _logo_data_uri(path=None):
+    p = path or LOGO_MAIN_PATH
+    if not os.path.exists(p):
+        # fallback to legacy
+        p = LOGO_PATH
+    if not os.path.exists(p):
         return ""
-    with open(LOGO_PATH, "rb") as fh:
+    with open(p, "rb") as fh:
+        return "data:image/png;base64," + base64.b64encode(fh.read()).decode()
+
+
+def _badge_data_uri():
+    p = LOGO_BADGE_PATH
+    if not os.path.exists(p):
+        p = LOGO_PATH   # fallback to legacy single logo
+    if not os.path.exists(p):
+        return ""
+    with open(p, "rb") as fh:
         return "data:image/png;base64," + base64.b64encode(fh.read()).decode()
 
 
@@ -733,7 +763,8 @@ def build_html(data):
     client_name = client.get("company_name") or "Client"
     project     = client.get("project_name") or "Proposal & Scope of Work"
     hdr         = re.sub(r'["\\\r\n]', " ", project)[:60]
-    logo        = _logo_data_uri()
+    logo_main  = _logo_data_uri()
+    logo_badge = _badge_data_uri()
 
     out = []
     out.append(f"""<!doctype html><html><head><meta charset="utf-8">
@@ -789,8 +820,11 @@ table.sign td {{ border: 1px solid #cbd5e1; padding: 10px 12px; width: 50%; vert
 
     # Cover
     out.append('<div style="page-break-after: always; padding-top: 5mm;">')
-    if logo:
-        out.append(f'<img src="{logo}" style="width: 100%; display: block; margin-bottom: 25mm;" alt="Wooplix Logos">')
+    # Dual-logo row: Wooplix wordmark left, Partner badge right
+    out.append('<table style="width:100%; border-collapse:collapse; margin-bottom: 22mm;"><tr>')
+    out.append(f'<td style="width:55%; vertical-align:middle;">{"<img src=" + chr(34) + logo_main + chr(34) + " style=" + chr(34) + "height:42px;" + chr(34) + " alt=" + chr(34) + "Wooplix" + chr(34) + ">" if logo_main else ""}</td>')
+    out.append(f'<td style="width:45%; vertical-align:middle; text-align:right;">{"<img src=" + chr(34) + logo_badge + chr(34) + " style=" + chr(34) + "height:38px;" + chr(34) + " alt=" + chr(34) + "Zoho Partner" + chr(34) + ">" if logo_badge else ""}</td>')
+    out.append('</tr></table>')
     
     out.append(f'<div class="cover-title">{esc(project)}</div>')
     out.append('<div class="cover-sub">Project Proposal &amp; Comprehensive Scope of Work</div>')
