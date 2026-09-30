@@ -8,141 +8,519 @@
   <link rel="icon" type="image/png" href="/wooplix_logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root{--ink:#17243a;--muted:#728097;--line:#e3e9f1;--blue:#315fcb;--navy:#14233d;--paper:#fff;--bg:#f6f8fc;--green:#138b69}
-    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"DM Sans",sans-serif;min-height:100vh}
-    .shell{max-width:1160px;margin:auto;padding:24px 36px 36px}.top{height:58px;display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}.brand{display:flex;align-items:center;gap:12px}.brand img{width:142px;height:auto;object-fit:contain}.brand-name{font:700 13px Manrope,sans-serif;letter-spacing:-.2px;color:#263c5f}.pill{border:1px solid #dce5f0;border-radius:99px;padding:8px 12px;color:#66748a;font-size:12px;background:#fff}.pill i{display:inline-block;width:7px;height:7px;border-radius:9px;background:#39b68a;margin-right:7px}
-    .hero{display:grid;grid-template-columns:1fr 330px;gap:30px;align-items:end;margin:20px 0 26px}.eyebrow{text-transform:uppercase;letter-spacing:1.7px;font-size:11px;font-weight:700;color:#4a70c6}.hero h1{font:800 clamp(32px,4.5vw,50px)/1.13 Manrope,sans-serif;letter-spacing:-2.3px;max-width:700px;margin:11px 0 12px;color:var(--navy)}.hero p{max-width:630px;margin:0;color:#77849a;font-size:15px;line-height:1.75}.hero-note{border-left:2px solid #dbe5f4;padding:2px 0 3px 16px;color:#8591a5;font-size:12px;line-height:1.65}.hero-note strong{display:block;color:#475873;font-size:13px;margin-bottom:4px}
-    .workspace{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start}.card{background:var(--paper);border:1px solid var(--line);border-radius:15px;box-shadow:0 5px 18px #23385808}.upload-card{padding:24px}.card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.card-head h2{font:700 16px Manrope,sans-serif;margin:0}.count{font-size:11px;font-weight:600;color:#7a879a;background:#f2f5fa;padding:6px 9px;border-radius:99px}.drop{border:1.5px dashed #cad6e8;background:#fafbfd;border-radius:12px;padding:29px 20px 25px;text-align:center;transition:.18s;cursor:pointer}.drop:hover,.drop.over{border-color:#6385d4;background:#f7f9ff}.icon{width:43px;height:43px;border-radius:13px;background:#eaf0ff;color:#416bd0;margin:0 auto 13px;display:grid;place-items:center}.icon svg{width:21px}.drop h3{font:700 14px Manrope,sans-serif;margin:0 0 6px}.drop p{color:#8390a3;font-size:12px;margin:0 0 16px}.browse{border:1px solid #d7deea;background:#fff;color:#29436d;font:600 12px "DM Sans";border-radius:7px;padding:9px 15px;cursor:pointer}.browse:hover{background:#f4f7fc}.hint{font-size:10px;color:#9aa5b5;margin-top:13px}.filelist{margin-top:14px;display:grid;gap:7px}.file-row{display:flex;align-items:center;gap:10px;border:1px solid #e9edf3;border-radius:9px;padding:10px 12px}.file-type{width:27px;height:30px;border-radius:6px;background:#edf2ff;color:#5373bf;display:grid;place-items:center;font:700 8px Manrope}.file-info{min-width:0;flex:1}.file-info strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}.file-info small{display:block;color:#8a96a7;font-size:10px;margin-top:3px}.remove{border:0;background:none;color:#a0aabc;font-size:18px;cursor:pointer;padding:1px 4px}.remove:hover{color:#d45f63}
-    .format-picker{margin:16px 0 12px}
-    .format-label{display:block;font-size:11px;font-weight:700;color:#55657e;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px}
-    .format-options{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-    .format-option{display:flex;align-items:center;justify-content:center;padding:9px 8px;border:1.5px solid #dce4f0;border-radius:9px;background:#fafbfd;cursor:pointer;font-size:11px;font-weight:600;color:#43546f;transition:.18s;user-select:none}
-    .format-option:hover{border-color:#7a9be3;background:#f3f6fc}
-    .format-option.active{border-color:var(--blue);background:#eef3ff;color:var(--blue)}
-    .format-option input{display:none}
-    .notice{display:flex;gap:9px;margin:16px 1px 16px;color:#78869b;font-size:11px;line-height:1.55}.notice svg{flex:none;width:15px;color:#7692c8}.primary{width:100%;background:var(--blue);color:#fff;border:0;border-radius:8px;padding:13px 16px;font:700 13px "DM Sans";cursor:pointer;transition:.2s;box-shadow:0 5px 12px #315fcb25}.primary:hover{background:#264fae;transform:translateY(-1px)}.primary:disabled{background:#a5b5d8;box-shadow:none;cursor:wait;transform:none}.status{min-height:18px;text-align:center;color:#64738b;font-size:11px;margin-top:10px}
-    .result-box{margin-top:16px;padding:16px;background:#f0fbf6;border:1.5px solid #c7ebd8;border-radius:12px;animation:fadeIn .25s ease}
-    .result-badge{display:inline-block;font-size:10px;font-weight:700;color:#138b69;background:#d8f4e7;padding:3px 9px;border-radius:99px;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px}
-    .result-title{font:700 15px Manrope,sans-serif;color:#173e31;margin-bottom:3px}
-    .result-filename{font-size:11px;color:#416f5c;font-family:monospace;word-break:break-all;margin-bottom:10px}
-    .download-btn{display:inline-flex;align-items:center;gap:6px;background:#158968;color:#fff;text-decoration:none;padding:7px 13px;border-radius:7px;font-size:11px;font-weight:700;transition:.18s}
-    .download-btn:hover{background:#0e684e}
-    @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-    .side{display:grid;gap:13px}.side-card{padding:18px 19px}.side-card h3{font:700 13px Manrope,sans-serif;margin:0 0 13px}.step{display:grid;grid-template-columns:25px 1fr;gap:10px;margin:12px 0}.step-num{width:23px;height:23px;border-radius:50%;background:#eef3ff;color:#4268c0;display:grid;place-items:center;font:700 10px Manrope}.step strong{font-size:11px;display:block;margin:1px 0 3px}.step span{font-size:10px;color:#8591a3;line-height:1.5;display:block}.formats{border-top:1px solid #edf0f4;padding-top:13px;margin-top:14px;font-size:10px;color:#8a96a7;line-height:1.65}.formats strong{color:#52637e}.security{background:#f0f8f5;border-color:#dcefe8}.security h3{color:#276951}.security p{font-size:10px;color:#698b7e;line-height:1.65;margin:0}.footer{display:flex;justify-content:space-between;align-items:center;color:#9aa4b3;font-size:10px;margin-top:27px;padding:0 2px}.footer a{color:#7387a8;text-decoration:none}.footer a:hover{text-decoration:underline}
-    @media(max-width:800px){.shell{padding:18px 18px 27px}.hero{grid-template-columns:1fr;gap:12px;margin:13px 0 21px}.hero-note{max-width:450px}.workspace{grid-template-columns:1fr}.side{grid-template-columns:1fr 1fr}.brand img{width:120px}.hero h1{letter-spacing:-1.5px}}
-    @media(max-width:540px){.shell{padding:13px 13px 22px}.top{margin-bottom:20px}.brand-name{display:none}.pill{font-size:10px;padding:7px 9px}.hero h1{font-size:34px}.hero p{font-size:13px}.upload-card{padding:17px}.drop{padding:24px 12px}.format-options{grid-template-columns:1fr}.side{grid-template-columns:1fr}.footer{gap:12px;align-items:flex-start;flex-direction:column}}
+    :root {
+      --ink: #17243a;
+      --muted: #6e7d95;
+      --line: #e3e9f2;
+      --blue: #2d5ccb;
+      --blue-hover: #1e4bb8;
+      --navy: #101e38;
+      --paper: #ffffff;
+      --bg: #f8fafc;
+      --green: #118462;
+      --green-bg: #eafaf1;
+      --card-shadow: 0 10px 30px rgba(18, 38, 71, 0.06);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "DM Sans", -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 20px;
+    }
+    .container {
+      width: 100%;
+      max-width: 620px;
+      margin: auto;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 32px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand img {
+      width: 135px;
+      height: auto;
+      object-fit: contain;
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      color: #5a6e8b;
+      background: #edf2f9;
+      padding: 6px 12px;
+      border-radius: 99px;
+      letter-spacing: 0.2px;
+    }
+    .intro {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .intro h1 {
+      font-family: "Manrope", sans-serif;
+      font-weight: 800;
+      font-size: clamp(26px, 4vw, 34px);
+      letter-spacing: -1px;
+      color: var(--navy);
+      margin-bottom: 8px;
+    }
+    .intro p {
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--card-shadow);
+      padding: 28px 28px 30px;
+    }
+    .drop-zone {
+      border: 2px dashed #cad5e5;
+      background: #fafbfd;
+      border-radius: 14px;
+      padding: 36px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .drop-zone:hover, .drop-zone.over {
+      border-color: var(--blue);
+      background: #f2f6ff;
+    }
+    .drop-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: #eaf0fc;
+      color: var(--blue);
+      margin: 0 auto 14px;
+      display: grid;
+      place-items: center;
+    }
+    .drop-icon svg {
+      width: 24px;
+      height: 24px;
+    }
+    .drop-zone h3 {
+      font-family: "Manrope", sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 6px;
+    }
+    .drop-zone p {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+    .browse-btn {
+      display: inline-block;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #273b5a;
+      font-family: "DM Sans", sans-serif;
+      font-weight: 600;
+      font-size: 12px;
+      border-radius: 8px;
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: 0.18s;
+    }
+    .browse-btn:hover {
+      background: #f1f5f9;
+    }
+    .file-list {
+      margin-top: 14px;
+      display: grid;
+      gap: 8px;
+    }
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid #e7ecf3;
+      border-radius: 10px;
+      padding: 10px 14px;
+      background: #ffffff;
+    }
+    .file-ext {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: #eef3ff;
+      color: var(--blue);
+      display: grid;
+      place-items: center;
+      font-family: "Manrope", sans-serif;
+      font-weight: 700;
+      font-size: 9px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    .file-details {
+      flex: 1;
+      min-width: 0;
+    }
+    .file-details strong {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--ink);
+    }
+    .file-details span {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .remove-btn {
+      border: 0;
+      background: none;
+      color: #9aa7b9;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 2px 6px;
+      line-height: 1;
+    }
+    .remove-btn:hover {
+      color: #d33c41;
+    }
+    .format-picker {
+      margin: 22px 0 16px;
+    }
+    .format-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      color: #55667e;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 8px;
+    }
+    .format-options {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .format-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 8px;
+      border: 1.5px solid #dbe2ed;
+      border-radius: 10px;
+      background: #fafbfd;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      color: #4b5d78;
+      transition: all 0.18s;
+      user-select: none;
+    }
+    .format-btn:hover {
+      border-color: #83a0e6;
+      background: #f4f7fd;
+    }
+    .format-btn.active {
+      border-color: var(--blue);
+      background: #eef3ff;
+      color: var(--blue);
+    }
+    .submit-btn {
+      width: 100%;
+      background: var(--blue);
+      color: #fff;
+      border: 0;
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-family: "DM Sans", sans-serif;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 4px 14px rgba(45, 92, 203, 0.22);
+      margin-top: 6px;
+    }
+    .submit-btn:hover:not(:disabled) {
+      background: var(--blue-hover);
+      transform: translateY(-1px);
+    }
+    .submit-btn:disabled {
+      background: #b5c3dd;
+      box-shadow: none;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .status-msg {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 12px;
+      min-height: 18px;
+    }
+    .result-box {
+      margin-top: 18px;
+      padding: 18px;
+      background: var(--green-bg);
+      border: 1.5px solid #b7e8d0;
+      border-radius: 12px;
+      animation: fadeIn 0.25s ease;
+    }
+    .result-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--green);
+      background: #d4f3e3;
+      padding: 3px 9px;
+      border-radius: 99px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .result-client {
+      font-family: "Manrope", sans-serif;
+      font-size: 16px;
+      font-weight: 800;
+      color: #123d2f;
+      margin-bottom: 4px;
+    }
+    .result-file {
+      font-size: 11px;
+      color: #3b6b58;
+      font-family: monospace;
+      word-break: break-all;
+      margin-bottom: 12px;
+    }
+    .download-again-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--green);
+      color: #fff;
+      text-decoration: none;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      transition: 0.18s;
+    }
+    .download-again-btn:hover {
+      background: #0d6349;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: none; }
+    }
+    .footer {
+      text-align: center;
+      color: #9aa6b8;
+      font-size: 11px;
+      margin-top: 32px;
+    }
+    @media (max-width: 540px) {
+      .card { padding: 20px 16px; }
+      .format-options { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <main class="shell">
-    <header class="top"><div class="brand"><img src="/wooplix_logo.png" alt="Wooplix"><span class="brand-name">Proposal Agent</span></div><span class="pill"><i></i>AI-assisted proposal drafting</span></header>
-    <section class="hero"><div><div class="eyebrow">Wooplix Technologies</div><h1>Turn requirements into a proposal.</h1><p>Drop in a client requirement file. The agent drafts a branded proposal and lets you download a ready-to-share PDF or editable Word document.</p></div><div class="hero-note"><strong>Direct PDF or Word export</strong>Every draft is professionally branded with scope, deliverables, and clean formatting.</div></section>
-    <section class="workspace">
-      <div class="card upload-card"><div class="card-head"><h2>Upload requirements</h2><span class="count" id="count">0 files selected</span></div>
-        <div class="drop" id="drop"><div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3"/></svg></div><h3>Drop a requirement file here</h3><p>Upload TXT, PDF, DOCX, or Markdown</p><button type="button" class="browse" id="browse">Choose file</button><div class="hint">PDF, DOCX, TXT or MD · Up to 4 MB per file</div></div>
-        <input id="picker" type="file" accept=".pdf,.docx,.txt,.md" multiple hidden><input id="folderPicker" type="file" accept=".pdf,.docx,.txt,.md" webkitdirectory directory multiple hidden>
-        <div class="filelist" id="filelist"></div>
+  <div class="container">
+    <header class="header">
+      <div class="brand">
+        <img src="/wooplix_logo.png" alt="Wooplix Technologies">
+      </div>
+      <span class="badge">Proposal Agent</span>
+    </header>
 
-        <div class="format-picker">
-          <label class="format-label">Download format:</label>
-          <div class="format-options">
-            <div class="format-option active" data-fmt="pdf">
-              <span>📄 PDF Document</span>
-            </div>
-            <div class="format-option" data-fmt="docx">
-              <span>📝 Word (DOCX)</span>
-            </div>
-            <div class="format-option" data-fmt="zip">
-              <span>📦 All Files (ZIP)</span>
-            </div>
-          </div>
+    <div class="intro">
+      <h1>Turn requirements into a proposal.</h1>
+      <p>Upload your client requirement document to generate a branded proposal.</p>
+    </div>
+
+    <div class="card">
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3"/>
+          </svg>
         </div>
+        <h3>Drop your requirement file here</h3>
+        <p>Supports PDF, DOCX, TXT or Markdown</p>
+        <button type="button" class="browse-btn" id="browseBtn">Choose File</button>
+      </div>
 
-        <div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg><span>Requirement documents are processed securely and discarded from the temporary workspace after generation.</span></div>
-        <button class="primary" id="generate" disabled>Generate proposal <span aria-hidden="true">→</span></button>
-        <div class="status" id="status" role="status" aria-live="polite"></div>
+      <input id="filePicker" type="file" accept=".pdf,.docx,.txt,.md" hidden>
+      <div class="file-list" id="fileList"></div>
 
-        <div class="result-box" id="resultBox" style="display:none;">
-          <span class="result-badge">✓ Proposal Ready</span>
-          <div class="result-title" id="resultClient">Client Name</div>
-          <div class="result-filename" id="resultFilename">Wooplix_Proposal.pdf</div>
-          <a id="resultDownloadLink" class="download-btn" href="#" download>Download Again</a>
+      <div class="format-picker">
+        <label class="format-label">Download format</label>
+        <div class="format-options">
+          <div class="format-btn active" data-fmt="pdf">📄 PDF Document</div>
+          <div class="format-btn" data-fmt="docx">📝 Word (DOCX)</div>
+          <div class="format-btn" data-fmt="zip">📦 All Files (ZIP)</div>
         </div>
       </div>
-      <aside class="side"><div class="card side-card"><h3>How it works</h3><div class="step"><div class="step-num">1</div><div><strong>Upload requirement</strong><span>Upload your client brief or scope notes.</span></div></div><div class="step"><div class="step-num">2</div><div><strong>AI Solution Drafting</strong><span>Drafts full scope, prerequisites & deliverables.</span></div></div><div class="step"><div class="step-num">3</div><div><strong>Instant Download</strong><span>Download direct branded PDF or DOCX without unzipping.</span></div></div><div class="formats"><strong>Supported input formats</strong><br>PDF · DOCX · TXT · Markdown</div></div>
-        <div class="card side-card security"><h3>Private by design</h3><p>Uploads are handled in temporary server storage and cleared when generation ends. Drafts remain unapproved for your team to review.</p></div></aside>
-    </section>
-    <footer class="footer"><span>© Wooplix Technologies Private Limited</span><a href="https://www.wooplix.com/" target="_blank" rel="noreferrer">wooplix.com ↗</a></footer>
-  </main>
-  <script>
-    const picker=document.querySelector('#picker'),folderPicker=document.querySelector('#folderPicker'),drop=document.querySelector('#drop'),list=document.querySelector('#filelist'),count=document.querySelector('#count'),button=document.querySelector('#generate'),status=document.querySelector('#status');
-    const resultBox=document.querySelector('#resultBox'),resultClient=document.querySelector('#resultClient'),resultFilename=document.querySelector('#resultFilename'),resultDownloadLink=document.querySelector('#resultDownloadLink');
-    let files=[];
-    let selectedFormat='pdf';
 
-    document.querySelectorAll('.format-option').forEach(opt=>{
-      opt.onclick=()=>{
-        document.querySelectorAll('.format-option').forEach(o=>o.classList.remove('active'));
-        opt.classList.add('active');
-        selectedFormat=opt.dataset.fmt;
+      <button class="submit-btn" id="generateBtn" disabled>Generate Proposal →</button>
+      <div class="status-msg" id="statusMsg" role="status" aria-live="polite"></div>
+
+      <div class="result-box" id="resultBox" style="display:none;">
+        <span class="result-badge">✓ Proposal Ready</span>
+        <div class="result-client" id="resultClient">Client Name</div>
+        <div class="result-file" id="resultFile">Wooplix_Proposal.pdf</div>
+        <a id="downloadAgainBtn" class="download-again-btn" href="#" download>Download Again</a>
+      </div>
+    </div>
+
+    <footer class="footer">
+      © Wooplix Technologies Private Limited
+    </footer>
+  </div>
+
+  <script>
+    const filePicker = document.querySelector('#filePicker');
+    const dropZone = document.querySelector('#dropZone');
+    const browseBtn = document.querySelector('#browseBtn');
+    const fileList = document.querySelector('#fileList');
+    const generateBtn = document.querySelector('#generateBtn');
+    const statusMsg = document.querySelector('#statusMsg');
+    const resultBox = document.querySelector('#resultBox');
+    const resultClient = document.querySelector('#resultClient');
+    const resultFile = document.querySelector('#resultFile');
+    const downloadAgainBtn = document.querySelector('#downloadAgainBtn');
+
+    let selectedFile = null;
+    let selectedFormat = 'pdf';
+
+    document.querySelectorAll('.format-btn').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedFormat = btn.dataset.fmt;
       };
     });
 
-    const allowed=['pdf','docx','txt','md'];
-    function setFiles(incoming){const next=[];for(const f of incoming){const ext=f.name.split('.').pop().toLowerCase();if(allowed.includes(ext)&&!next.some(x=>x.name===f.name&&x.size===f.size))next.push(f)}files=next.slice(0,5);render()}
-    function render(){count.textContent=`${files.length} ${files.length===1?'file':'files'} selected`;button.disabled=!files.length||files.length>5;list.innerHTML='';files.forEach((f,i)=>{const row=document.createElement('div');row.className='file-row';row.innerHTML=`<div class="file-type">${f.name.split('.').pop().toUpperCase()}</div><div class="file-info"><strong></strong><small></small></div><button class="remove" aria-label="Remove file">×</button>`;row.querySelector('strong').textContent=f.webkitRelativePath||f.name;row.querySelector('small').textContent=`${(f.size/1024).toFixed(0)} KB`;row.querySelector('button').onclick=()=>{files.splice(i,1);render()};list.append(row)})}
-    document.querySelector('#browse').onclick=e=>{e.stopPropagation();picker.click()};drop.onclick=e=>{if(e.target.closest('button'))return;folderPicker.click()};picker.onchange=()=>setFiles(picker.files);folderPicker.onchange=()=>setFiles(folderPicker.files);drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};drop.ondragleave=()=>drop.classList.remove('over');drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');setFiles(e.dataTransfer.files)};
+    browseBtn.onclick = (e) => { e.stopPropagation(); filePicker.click(); };
+    dropZone.onclick = (e) => { if (e.target !== browseBtn) filePicker.click(); };
 
-    button.onclick=async()=>{
-      const fd=new FormData();
-      files.forEach(f=>fd.append('files',f,f.name));
-      button.disabled=true;
-      button.textContent='Drafting proposal…';
-      status.textContent='Analyzing client requirement and generating branded proposal…';
-      resultBox.style.display='none';
+    filePicker.onchange = () => {
+      if (filePicker.files && filePicker.files[0]) {
+        setFile(filePicker.files[0]);
+      }
+    };
 
-      try{
-        const res=await fetch(`/api/generate?format=${selectedFormat}`,{method:'POST',body:fd});
-        if(!res.ok){
-          const info=await res.json().catch(()=>({}));
-          throw new Error(info.detail||'Generation failed. Please try again.');
+    dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('over'); };
+    dropZone.ondragleave = () => { dropZone.classList.remove('over'); };
+    dropZone.ondrop = (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('over');
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        setFile(e.dataTransfer.files[0]);
+      }
+    };
+
+    function setFile(f) {
+      selectedFile = f;
+      renderFile();
+    }
+
+    function renderFile() {
+      fileList.innerHTML = '';
+      if (!selectedFile) {
+        generateBtn.disabled = true;
+        return;
+      }
+      generateBtn.disabled = false;
+      const ext = selectedFile.name.split('.').pop();
+      const item = document.createElement('div');
+      item.className = 'file-item';
+      item.innerHTML = `
+        <div class="file-ext">${ext}</div>
+        <div class="file-details">
+          <strong>${selectedFile.name}</strong>
+          <span>${(selectedFile.size / 1024).toFixed(0)} KB</span>
+        </div>
+        <button class="remove-btn" title="Remove file" aria-label="Remove file">×</button>
+      `;
+      item.querySelector('.remove-btn').onclick = (e) => {
+        e.stopPropagation();
+        selectedFile = null;
+        filePicker.value = '';
+        renderFile();
+      };
+      fileList.appendChild(item);
+    }
+
+    generateBtn.onclick = async () => {
+      if (!selectedFile) return;
+
+      const fd = new FormData();
+      fd.append('files', selectedFile, selectedFile.name);
+
+      generateBtn.disabled = true;
+      generateBtn.textContent = 'Generating proposal…';
+      statusMsg.textContent = 'Drafting your branded proposal…';
+      resultBox.style.display = 'none';
+
+      try {
+        const res = await fetch(`/api/generate?format=${selectedFormat}`, {
+          method: 'POST',
+          body: fd
+        });
+
+        if (!res.ok) {
+          const info = await res.json().catch(() => ({}));
+          throw new Error(info.detail || 'Generation failed. Please try again.');
         }
 
-        let filename=res.headers.get('x-proposal-filename');
-        if(!filename){
-          const disp=res.headers.get('content-disposition')||'';
-          const match=disp.match(/filename="?([^";]+)"?/);
-          if(match) filename=match[1];
+        let filename = res.headers.get('x-proposal-filename');
+        if (!filename) {
+          const disp = res.headers.get('content-disposition') || '';
+          const match = disp.match(/filename="?([^";]+)"?/);
+          if (match) filename = match[1];
         }
-        if(!filename){
-          filename = selectedFormat==='docx' ? 'Wooplix_Proposal.docx' : (selectedFormat==='zip' ? 'Wooplix_Results.zip' : 'Wooplix_Proposal.pdf');
+        if (!filename) {
+          filename = selectedFormat === 'docx' ? 'Wooplix_Proposal.docx' : (selectedFormat === 'zip' ? 'Wooplix_Results.zip' : 'Wooplix_Proposal.pdf');
         }
 
-        const clientName=res.headers.get('x-proposal-client')||'Proposal Client';
+        const clientName = res.headers.get('x-proposal-client') || 'Client';
 
-        const blob=await res.blob();
-        const url=URL.createObjectURL(blob);
-        const a=document.createElement('a');
-        a.href=url;
-        a.download=filename;
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
         document.body.append(a);
         a.click();
         a.remove();
 
-        resultBox.style.display='block';
-        resultClient.textContent=clientName;
-        resultFilename.textContent=`Saved as: ${filename}`;
-        resultDownloadLink.href=url;
-        resultDownloadLink.download=filename;
+        resultBox.style.display = 'block';
+        resultClient.textContent = clientName;
+        resultFile.textContent = `Downloaded: ${filename}`;
+        downloadAgainBtn.href = url;
+        downloadAgainBtn.download = filename;
 
-        status.textContent=`✓ Generated successfully for "${clientName}". File downloaded!`;
-      }catch(err){
-        status.textContent=err.message;
-      }finally{
-        button.innerHTML='Generate proposal <span aria-hidden="true">→</span>';
-        button.disabled=!files.length;
+        statusMsg.textContent = `✓ Done! Downloaded to your computer.`;
+      } catch (err) {
+        statusMsg.textContent = err.message;
+      } finally {
+        generateBtn.textContent = 'Generate Proposal →';
+        generateBtn.disabled = !selectedFile;
       }
     };
   </script>
