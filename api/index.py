@@ -51,8 +51,8 @@ def _build_pdf_with_existing_template(proposal, target, host=None):
 @app.get("/index.html", response_class=HTMLResponse)
 def index_page():
     for candidate in [
-        Path(__file__).resolve().parents[1] / "public" / "index.html",
         Path(__file__).resolve().parents[1] / "index.html",
+        Path(__file__).resolve().parents[1] / "public" / "index.html",
     ]:
         if candidate.exists():
             return HTMLResponse(content=candidate.read_text(encoding="utf-8"))
