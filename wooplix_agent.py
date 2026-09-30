@@ -716,22 +716,26 @@ def build_docx(data, output):
     last_sec = "9" if not (com and isinstance(com, dict) and com.get("items")) else "10"
     section_h(last_sec, "Project Governance & Formal Acceptance Sign-Off")
     body_text("By signing below, both parties acknowledge the scope, deliverables, assumptions, and pre-requisites:", after=12)
-    sg_tbl = doc.add_table(rows=5, cols=2); sg_tbl.style = "Table Grid"
-    _cell_margins(sg_tbl, top=80, bot=80, left=140, right=140)
-    _borders(sg_tbl)
+    sg_tbl = doc.add_table(rows=1, cols=3)
     for row in sg_tbl.rows:
-        row.cells[0].width = Inches(3.5); row.cells[1].width = Inches(3.5)
-    _shd(sg_tbl.cell(0, 0), NAVY_HEX); _shd(sg_tbl.cell(0, 1), NAVY_HEX)
-    h0 = sg_tbl.cell(0, 0).paragraphs[0].add_run(f"FOR CLIENT: {client_name}")
-    h1 = sg_tbl.cell(0, 1).paragraphs[0].add_run(f"FOR: {COMPANY_NAME}")
-    for rn in [h0, h1]:
-        rn.bold = True; rn.font.color.rgb = RGBColor(0xff, 0xff, 0xff); rn.font.size = Pt(9.5)
-    for ri, fld in enumerate(["Authorized Signatory:", "Name:", "Designation / Title:", "Date & Seal:"], 1):
-        for ci in range(2):
-            p = sg_tbl.cell(ri, ci).paragraphs[0]
-            p.paragraph_format.space_before = Pt(4); p.paragraph_format.space_after = Pt(4)
-            r = p.add_run(fld + "\n\n"); r.bold = True; r.font.size = Pt(9)
-    doc.add_paragraph().paragraph_format.space_after = Pt(12)
+        row.cells[0].width = Inches(3.0)
+        row.cells[1].width = Inches(1.0)
+        row.cells[2].width = Inches(3.0)
+    
+    p0 = sg_tbl.cell(0, 0).paragraphs[0]
+    p0.add_run("Accepted by Client:\n\n").bold = True
+    p0.add_run(f"{client_name}\n\n\n\n").bold = True
+    p0.add_run("Authorized Signatory\n").font.size = Pt(10)
+    p0.add_run("Name: _______________________\n").font.size = Pt(10)
+    p0.add_run("Date: _______________________\n").font.size = Pt(10)
+    
+    p2 = sg_tbl.cell(0, 2).paragraphs[0]
+    p2.add_run(f"For {COMPANY_NAME}:\n\n").bold = True
+    p2.add_run("\n\n\n\n")
+    p2.add_run("Authorized Signatory\n").font.size = Pt(10)
+    p2.add_run("Name: _______________________\n").font.size = Pt(10)
+    p2.add_run("Date: _______________________\n").font.size = Pt(10)
+
     ft = doc.add_paragraph()
     ftr = ft.add_run(f"{COMPANY_NAME}   |   {COMPANY_EMAIL}   |   {COMPANY_WEBSITE}")
     ftr.font.size = Pt(8.5); ftr.font.color.rgb = RGBColor(0x64, 0x74, 0x8b)
@@ -936,12 +940,10 @@ table.sign td {{ border: 1px solid #cbd5e1; padding: 10px 12px; width: 50%; vert
     last_sec = "9" if not (com and isinstance(com, dict) and com.get("items")) else "10"
     out.append(f'<h2 class="sh">{last_sec}. Project Governance &amp; Formal Acceptance Sign-Off</h2>')
     out.append('<p class="body">By signing below, both parties acknowledge the scope, deliverables, assumptions, and pre-requisites:</p>')
-    out.append('<table class="sign"><tr>'
-               f'<th>FOR CLIENT:  {esc(client_name)}</th>'
-               f'<th>FOR:  {esc(COMPANY_NAME)}</th>'
-               '</tr><tr>'
-               '<td><strong>Authorized Signatory:</strong><br><br><br><strong>Name:</strong><br><strong>Designation:</strong><br><strong>Date &amp; Seal:</strong></td>'
-               '<td><strong>Authorized Signatory:</strong><br><br><br><strong>Name:</strong><br><strong>Designation:</strong><br><strong>Date &amp; Seal:</strong></td>'
+    out.append('<table style="width: 100%; border-collapse: collapse; margin-top: 24px;"><tr>'
+               f'<td style="width: 45%; vertical-align: top; font-size: 9pt;"><strong>Accepted by Client:</strong><br><br><strong>{esc(client_name)}</strong><br><br><br><br>Authorized Signatory<br><br>Name: _______________________<br><br>Date: _______________________</td>'
+               '<td style="width: 10%;"></td>'
+               f'<td style="width: 45%; vertical-align: top; font-size: 9pt;"><strong>For {esc(COMPANY_NAME)}:</strong><br><br><br><br><br><br>Authorized Signatory<br><br>Name: _______________________<br><br>Date: _______________________</td>'
                '</tr></table>')
     out.append('</body></html>')
     return "".join(out)
