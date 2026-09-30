@@ -8,7 +8,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -25,15 +25,17 @@ def _safe_name(value):
     return re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_") or "Client"
 
 
-def _build_pdf_with_existing_template(proposal, target):
+def _build_pdf_with_existing_template(proposal, target, host=None):
     """Render the exact same HTML through the same Dompdf options as the CLI."""
     if os.environ.get("VERCEL"):
-        base = os.environ.get("VERCEL_URL")
+        base = host or os.environ.get("VERCEL_PROJECT_PRODUCTION_URL") or os.environ.get("VERCEL_URL")
         token = os.environ.get("PDF_RENDER_TOKEN")
         if not base or not token:
             raise RuntimeError("Vercel PHP/Dompdf renderer is not configured")
+        url = base if base.startswith("http") else f"https://{base}"
+        url = f"{url.rstrip('/')}/api/pdf.php"
         response = requests.post(
-            f"https://{base}/api/pdf.php",
+            url,
             json={"html": agent.build_html(proposal)},
             headers={"Authorization": f"Bearer {token}"},
             timeout=240,
@@ -77,12 +79,13 @@ def health():
 @app.post("/api/generate")
 @app.post("/generate")
 @app.post("/api/index.py")
-async def generate(files: list[UploadFile] = File(...)):
+async def generate(request: Request, files: list[UploadFile] = File(...)):
     if not os.environ.get("GROQ_API_KEY"):
         raise HTTPException(status_code=503, detail="The proposal service is not configured yet. Add GROQ_API_KEY in Vercel project settings.")
     if not files or len(files) > MAX_FILES:
         raise HTTPException(status_code=400, detail=f"Choose between 1 and {MAX_FILES} requirement files.")
 
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
     archive = io.BytesIO()
     total = 0
     names = set()
@@ -123,15 +126,20 @@ async def generate(files: list[UploadFile] = File(...)):
                     pdf = result_dir / f"Wooplix_Proposal_{stem}.pdf"
                     json_path = result_dir / f"Wooplix_Proposal_{stem}.json"
                     agent.build_docx(proposal, str(docx))
-                    _build_pdf_with_existing_template(proposal, pdf)
                     json_path.write_text(json.dumps(proposal, indent=2, ensure_ascii=False), encoding="utf-8")
-                    for path in (docx, pdf, json_path):
+                    outputs = [docx, json_path]
+                    try:
+                        _build_pdf_with_existing_template(proposal, pdf, host=host)
+                        if pdf.exists() and pdf.stat().st_size > 0:
+                            outputs.append(pdf)
+                    except Exception as pdf_err:
+                        print(f"PDF build warning: {type(pdf_err).__name__}: {pdf_err}")
+                    for path in outputs:
                         bundle.write(path, arcname=f"Wooplix_Results/{path.name}")
     except HTTPException:
         raise
     except Exception as exc:
-        # Do not expose provider errors, request contents, or credentials to the browser.
         print(f"Proposal generation failed: {type(exc).__name__}: {str(exc)[:300]}")
-        raise HTTPException(status_code=502, detail="Proposal generation failed. Check the Vercel function logs and try again.") from exc
+        raise HTTPException(status_code=502, detail=f"Proposal generation failed ({type(exc).__name__}: {str(exc)[:150]}).") from exc
     archive.seek(0)
     return StreamingResponse(archive, media_type="application/zip", headers={"Content-Disposition": 'attachment; filename="Wooplix_Results.zip"'})
