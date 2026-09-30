@@ -1,0 +1,180 @@
+XY COMPANY | CUSTOMER REQUIREMENT DOCUMENT
+Confidential | For solution evaluation and proposal preparation
+CUSTOMER REQUIREMENT DOCUMENT
+Business Automation & Zoho Evaluation
+XY Manufacturing Private Limited
+Document Type Customer Requirement / RFP-style document
+Customer XY Manufacturing Private Limited
+Industry
+Industrial equipment manufacturing and
+distribution
+Prepared For Solution & implementation partner
+Document Status Draft requirement for proposal preparation
+XY COMPANY | CUSTOMER REQUIREMENT DOCUMENT
+Confidential | For solution evaluation and proposal preparation
+1. Company Background
+XY Manufacturing Private Limited is an India-based manufacturer and distributor of industrial equipment.
+The company has approximately 85 office users across Sales, Finance, Operations, Service and Management,
+with field sales and service teams working from multiple locations.
+2. Current Business Process
+The company currently uses a combination of spreadsheets, email, shared folders and separate applications for
+different functions. Accounting is handled in Tally Prime. Sales enquiries are mostly tracked through
+spreadsheets and email. Inventory information is maintained in the accounting system and separate Excel
+files. Service requests are received through email and phone and are manually assigned to service personnel.
+Management does not have a single real-time dashboard covering the sales pipeline, receivables, inventory
+status, service performance and operational KPIs.
+3. Business Challenges
+ Lead and enquiry tracking is inconsistent and depends heavily on individual sales employees.
+ There is no standard sales pipeline with defined stages, activities and follow-up reminders.
+ Customer and contact information is duplicated across spreadsheets.
+ Quotation and sales follow-up status is difficult for management to monitor.
+ Finance users spend significant time reconciling information between Tally, spreadsheets and emails.
+ Inventory availability is not easily visible to sales teams while preparing quotations.
+ Customer service requests are not tracked through a standard ticketing process.
+ Management reporting requires manual consolidation from multiple sources.
+ The company wants to reduce manual data entry and improve process visibility.
+4. Project Objectives
+ Create a centralized customer and sales management system.
+ Standardize lead-to-customer and quotation follow-up processes.
+ Improve visibility of sales activities and pipeline value.
+ Improve coordination between Sales, Finance, Operations and Service.
+ Automate routine notifications and follow-up tasks.
+ Provide management dashboards and KPI reporting.
+ Integrate relevant business data with the existing accounting environment.
+ Reduce duplicate data entry and spreadsheet-based reporting.
+5. Functional Requirements
+5.1 Sales & CRM
+ Capture leads from website forms, email enquiries and manual entry.
+ Maintain accounts, contacts and customer history.
+ Define a sales pipeline with configurable stages.
+ Assign leads and opportunities to sales users based on territory or business rules.
+ Create tasks, calls and follow-up reminders.
+XY COMPANY | CUSTOMER REQUIREMENT DOCUMENT
+Confidential | For solution evaluation and proposal preparation
+ Track opportunity value, expected closing date and probability.
+ Generate quotations and track quotation status.
+ Convert qualified leads into customers without duplicate data.
+ Maintain a record of customer interactions and sales notes.
+5.2 Finance & Order Information
+ Sales users should be able to view relevant customer financial information where permitted.
+ Users should be able to see invoice and outstanding information for customers.
+ The solution should reduce manual re-entry of customer and transaction information between systems.
+ Finance should be able to reconcile customer and order information against accounting records.
+ The implementation partner should assess whether the existing Tally environment can be integrated
+directly or through a suitable middleware/API/file-based method.
+5.3 Inventory & Operations
+ Maintain product/item master data with SKU, product name, category, unit and selling price.
+ Provide sales users with visibility of stock availability where feasible.
+ Track stock movements and relevant inventory transactions.
+ Generate low-stock or reorder alerts based on agreed business rules.
+ Provide management reporting on stock availability and inventory value.
+5.4 Customer Service
+ Allow customers or internal users to raise service requests.
+ Assign tickets to support/service employees.
+ Track ticket priority, category, status and resolution time.
+ Send acknowledgement and status notifications.
+ Maintain service history against the customer record.
+ Provide service performance reporting for management.
+5.5 Analytics & Management Reporting
+ Sales pipeline dashboard by salesperson, territory and stage.
+ Lead source and conversion analysis.
+ Quotation and opportunity ageing.
+ Sales performance by month, product and salesperson.
+ Receivables / outstanding summary by customer.
+ Inventory availability and low-stock reporting.
+ Service ticket volume, ageing and resolution performance.
+ Executive dashboard with key business KPIs.
+6. Automation Requirements
+ Automatic lead assignment based on defined rules.
+ Follow-up reminders for sales opportunities and quotations.
+ Notifications when opportunities remain inactive beyond a defined period.
+ Customer communication triggered by agreed sales/service events.
+ Approval workflow for discounts above authorized limits.
+ Alerts for low stock or selected inventory thresholds.
+ Escalation notifications for service tickets approaching SLA limits.
+ Scheduled management reports.
+XY COMPANY | CUSTOMER REQUIREMENT DOCUMENT
+Confidential | For solution evaluation and proposal preparation
+7. Integration Requirements
+ Existing accounting platform: Tally Prime.
+ Company website lead/enquiry forms.
+ Company email for enquiry and notification flows.
+ Optional consideration of WhatsApp or another messaging channel for customer communication; final
+scope to be confirmed.
+ The implementation partner should recommend the appropriate integration approach and identify any
+API, middleware or file-exchange dependency.
+8. Users, Roles & Access
+Initial user estimate: approximately 85 users.
+ Sales Team: 35 users.
+ Finance Team: 10 users.
+ Operations / Inventory: 15 users.
+ Service Team: 15 users.
+ Management / Admin: 10 users.
+The solution should support role-based permissions so that users can access only the information relevant to
+their responsibilities. Management should have cross-functional reporting visibility.
+9. Data Migration Requirements
+ Migrate customer/account records from existing spreadsheets.
+ Migrate contact records and available customer history where practical.
+ Migrate product/item master data.
+ Migrate open opportunities and quotations if technically feasible.
+ Define data cleansing and deduplication rules before migration.
+ Provide a migration validation/reconciliation process.
+10. Proposed Implementation Expectations
+ Implementation partner to conduct a detailed discovery workshop before final solution design.
+ Configuration and customization should be based on approved process maps.
+ Integration approach should be documented before development begins.
+ The solution should be tested in a non-production environment before go-live.
+ User Acceptance Testing should be completed with designated business users.
+ Partner should provide administrator and end-user training.
+ Partner should provide solution documentation and a basic operating guide.
+11. Security, Audit & Governance
+ Role-based access controls are required.
+ Important record changes should be traceable where supported by the selected platform.
+ Administrative access should be restricted to authorized personnel.
+ Integration credentials and secrets should not be stored in plain text.
+XY COMPANY | CUSTOMER REQUIREMENT DOCUMENT
+Confidential | For solution evaluation and proposal preparation
+ The final solution should document key assumptions, integrations and ownership of data.
+12. Expected Deliverables
+ Configured business applications based on the approved solution scope.
+ Configured workflows and automation.
+ Integration with agreed systems.
+ Management dashboards and agreed reports.
+ Data migration for the agreed datasets.
+ Test scripts / UAT support.
+ Training sessions.
+ Basic solution documentation and user guide.
+ Go-live support and post-go-live stabilization support.
+13. Indicative Timeline Expectation
+XY Company would like the solution to be delivered in approximately 6 to 10 weeks from project kickoff,
+subject to discovery, availability of required data and systems, integration complexity, UAT scheduling and
+timely business approvals.
+14. Information Available at This Stage
+ Approximate user count and departmental distribution.
+ Current accounting platform: Tally Prime.
+ High-level functional requirements listed above.
+ High-level reporting and automation requirements.
+ Expectation for data migration and training.
+15. Information to be Finalized During Discovery
+ Exact Zoho product editions and licenses.
+ Detailed lead, opportunity, quotation and order process maps.
+ Tally integration method and available APIs/file formats.
+ Detailed approval matrix and discount authorization rules.
+ Detailed data fields, historical data volume and migration format.
+ Service SLA definitions and escalation rules.
+ Exact dashboard layouts and KPI formulas.
+ Email, WhatsApp or other communication-channel requirements.
+ Detailed implementation timeline and responsibilities.
+16. Request to the Implementation Partner
+Please review this requirement document and provide a proposal covering the recommended solution
+architecture, Zoho products/modules, detailed scope of work, integrations, automation, reporting, migration
+approach, implementation methodology, project timeline, assumptions, dependencies, support approach and
+commercials. The proposal should clearly identify items that require clarification or separate estimation.
+XY COMPANY | CUSTOMER REQUIREMENT DOCUMENT
+Confidential | For solution evaluation and proposal preparation
+17. Customer Contact / Project Owner
+Company: XY Manufacturing Private Limited
+Project Owner: Mr. Rahul Sharma, Head of Operations
+Email: rahul.sharma@example.com
+Phone: +91-98765-43210
+END OF CUSTOMER REQUIREMENT DOCUMENT

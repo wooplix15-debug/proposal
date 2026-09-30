@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 300
+    },
+    "api/pdf.php": {
+      "runtime": "vercel-php@0.5.2"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index.py" }
+  ]
+}
