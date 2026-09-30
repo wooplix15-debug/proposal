@@ -86,9 +86,15 @@ async def generate(request: Request, files: list[UploadFile] = File(...)):
         raise HTTPException(status_code=400, detail=f"Choose between 1 and {MAX_FILES} requirement files.")
 
     host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    requested_format = (request.query_params.get("format") or "auto").lower()
     archive = io.BytesIO()
     total = 0
     names = set()
+    single_pdf_bytes = None
+    single_docx_bytes = None
+    single_client = ""
+    single_stem = ""
+
     try:
         with tempfile.TemporaryDirectory(prefix="wooplix-") as work:
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
@@ -136,10 +142,67 @@ async def generate(request: Request, files: list[UploadFile] = File(...)):
                         print(f"PDF build warning: {type(pdf_err).__name__}: {pdf_err}")
                     for path in outputs:
                         bundle.write(path, arcname=f"Wooplix_Results/{path.name}")
+
+                    if len(files) == 1:
+                        single_client = client_name
+                        single_stem = stem
+                        if docx.exists():
+                            single_docx_bytes = docx.read_bytes()
+                        if pdf.exists() and pdf.stat().st_size > 0:
+                            single_pdf_bytes = pdf.read_bytes()
+
+            archive.seek(0)
+            zip_payload = archive.read()
     except HTTPException:
         raise
     except Exception as exc:
         print(f"Proposal generation failed: {type(exc).__name__}: {str(exc)[:300]}")
         raise HTTPException(status_code=502, detail=f"Proposal generation failed ({type(exc).__name__}: {str(exc)[:150]}).") from exc
-    archive.seek(0)
-    return StreamingResponse(archive, media_type="application/zip", headers={"Content-Disposition": 'attachment; filename="Wooplix_Results.zip"'})
+
+    # Direct PDF response when generating a single proposal (default format)
+    if len(files) == 1 and requested_format in ("pdf", "auto") and single_pdf_bytes:
+        out_name = f"Wooplix_Proposal_{single_stem}.pdf"
+        return StreamingResponse(
+            io.BytesIO(single_pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{out_name}"',
+                "X-Proposal-Client": single_client,
+                "X-Proposal-Filename": out_name,
+                "X-Proposal-Type": "pdf",
+                "Access-Control-Expose-Headers": "Content-Disposition, X-Proposal-Client, X-Proposal-Filename, X-Proposal-Type",
+            },
+        )
+
+    # Direct DOCX response if specifically requested
+    if len(files) == 1 and requested_format == "docx" and single_docx_bytes:
+        out_name = f"Wooplix_Proposal_{single_stem}.docx"
+        return StreamingResponse(
+            io.BytesIO(single_docx_bytes),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{out_name}"',
+                "X-Proposal-Client": single_client,
+                "X-Proposal-Filename": out_name,
+                "X-Proposal-Type": "docx",
+                "Access-Control-Expose-Headers": "Content-Disposition, X-Proposal-Client, X-Proposal-Filename, X-Proposal-Type",
+            },
+        )
+
+    # Full ZIP bundle (for batch of multiple files, or if requested_format == "zip")
+    if len(files) == 1:
+        out_name = f"Wooplix_Proposal_{single_stem}.zip"
+    else:
+        out_name = f"Wooplix_Proposals_{len(files)}_files.zip"
+
+    return StreamingResponse(
+        io.BytesIO(zip_payload),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{out_name}"',
+            "X-Proposal-Client": single_client if len(files) == 1 else f"{len(files)} Proposals",
+            "X-Proposal-Filename": out_name,
+            "X-Proposal-Type": "zip",
+            "Access-Control-Expose-Headers": "Content-Disposition, X-Proposal-Client, X-Proposal-Filename, X-Proposal-Type",
+        },
+    )
