@@ -240,6 +240,7 @@
       background: #eef3ff;
       color: var(--blue);
     }
+    /* Tab bar */
     .tab-bar {
       display: flex;
       gap: 8px;
@@ -264,6 +265,7 @@
       background: #eef3ff;
       color: var(--blue);
     }
+    /* Text textarea */
     #requirementText {
       width: 100%;
       box-sizing: border-box;
@@ -395,11 +397,14 @@
     </div>
 
     <div class="card">
+
+      <!-- Tab switcher -->
       <div class="tab-bar">
-        <button type="button" class="tab-btn active" id="tabFile">📁 Upload File</button>
-        <button type="button" class="tab-btn" id="tabText">✏️ Paste Text</button>
+        <button class="tab-btn active" id="tabFile">📁 Upload File</button>
+        <button class="tab-btn" id="tabText">✏️ Paste Text</button>
       </div>
 
+      <!-- File upload panel -->
       <div id="panelFile">
         <div class="drop-zone" id="dropZone">
           <div class="drop-icon">
@@ -415,14 +420,16 @@
         <div class="file-list" id="fileList"></div>
       </div>
 
+      <!-- Text paste panel -->
       <div id="panelText" style="display:none;">
         <textarea
           id="requirementText"
-          placeholder="Paste your client requirement here...&#10;&#10;Example: Client needs a mobile app for inventory management with barcode scanning, real-time stock updates, and reporting dashboard for 50 warehouse users."
+          placeholder="Paste your client requirement here…&#10;&#10;Example: Client needs a mobile app for inventory management with barcode scanning, real-time stock updates, and reporting dashboard for 50 warehouse users."
           rows="8"
         ></textarea>
       </div>
 
+      <!-- Format picker -->
       <div class="format-picker">
         <label class="format-label">Download format</label>
         <div class="format-options">
@@ -469,6 +476,7 @@
     let selectedFormat = 'pdf';
     let activeTab = 'file';
 
+    // Tab switching
     tabFile.onclick = () => {
       activeTab = 'file';
       tabFile.classList.add('active');
@@ -489,11 +497,14 @@
     requirementText.oninput = updateSubmitState;
 
     function updateSubmitState() {
-      generateBtn.disabled = activeTab === 'file'
-        ? !selectedFile
-        : !requirementText.value.trim();
+      if (activeTab === 'file') {
+        generateBtn.disabled = !selectedFile;
+      } else {
+        generateBtn.disabled = !requirementText.value.trim();
+      }
     }
 
+    // Format picker
     document.querySelectorAll('.format-btn').forEach(btn => {
       btn.onclick = () => {
         document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
@@ -502,23 +513,16 @@
       };
     });
 
+    // File upload handlers
     browseBtn.onclick = (e) => { e.stopPropagation(); filePicker.click(); };
     dropZone.onclick = (e) => { if (e.target !== browseBtn) filePicker.click(); };
-
-    filePicker.onchange = () => {
-      if (filePicker.files && filePicker.files[0]) {
-        setFile(filePicker.files[0]);
-      }
-    };
-
+    filePicker.onchange = () => { if (filePicker.files && filePicker.files[0]) setFile(filePicker.files[0]); };
     dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('over'); };
-    dropZone.ondragleave = () => { dropZone.classList.remove('over'); };
+    dropZone.ondragleave = () => dropZone.classList.remove('over');
     dropZone.ondrop = (e) => {
       e.preventDefault();
       dropZone.classList.remove('over');
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        setFile(e.dataTransfer.files[0]);
-      }
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
     };
 
     function setFile(f) {
@@ -528,15 +532,12 @@
 
     function renderFile() {
       fileList.innerHTML = '';
-      if (!selectedFile) {
-        updateSubmitState();
-        return;
-      }
+      if (!selectedFile) { updateSubmitState(); return; }
       const ext = selectedFile.name.split('.').pop();
       const item = document.createElement('div');
       item.className = 'file-item';
       item.innerHTML = `
-        <div class="file-ext">${ext}</div>
+        <div class="file-ext">${ext.toUpperCase()}</div>
         <div class="file-details">
           <strong>${selectedFile.name}</strong>
           <span>${(selectedFile.size / 1024).toFixed(0)} KB</span>
@@ -569,11 +570,7 @@
       resultBox.style.display = 'none';
 
       try {
-        const res = await fetch(`/api/generate?format=${selectedFormat}`, {
-          method: 'POST',
-          body: fd
-        });
-
+        const res = await fetch(`/api/generate?format=${selectedFormat}`, { method: 'POST', body: fd });
         if (!res.ok) {
           const info = await res.json().catch(() => ({}));
           throw new Error(info.detail || 'Generation failed. Please try again.');
@@ -585,28 +582,21 @@
           const match = disp.match(/filename="?([^";]+)"?/);
           if (match) filename = match[1];
         }
-        if (!filename) {
-          filename = selectedFormat === 'docx' ? 'Wooplix_Proposal.docx' : (selectedFormat === 'zip' ? 'Wooplix_Results.zip' : 'Wooplix_Proposal.pdf');
-        }
+        if (!filename) filename = selectedFormat === 'docx' ? 'Wooplix_Proposal.docx' : (selectedFormat === 'zip' ? 'Wooplix_Results.zip' : 'Wooplix_Proposal.pdf');
 
         const clientName = res.headers.get('x-proposal-client') || 'Client';
-
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.append(a);
-        a.click();
-        a.remove();
+        a.href = url; a.download = filename;
+        document.body.append(a); a.click(); a.remove();
 
         resultBox.style.display = 'block';
         resultClient.textContent = clientName;
         resultFile.textContent = `Downloaded: ${filename}`;
         downloadAgainBtn.href = url;
         downloadAgainBtn.download = filename;
-
-        statusMsg.textContent = `✓ Done! Downloaded to your computer.`;
+        statusMsg.textContent = `✓ Done! Proposal downloaded to your computer.`;
       } catch (err) {
         statusMsg.textContent = err.message;
       } finally {

@@ -423,6 +423,49 @@ def normalize_proposal(data):
     return out
 
 
+def _get_cover_specs(data):
+    client_data  = data.get("client", {}) or {}
+    client_name  = client_data.get("company_name") or "Client"
+    project_name = client_data.get("project_name") or "Business Automation & System Implementation"
+    status       = data.get("status") or "Draft — Pending Client Review"
+
+    products = ", ".join(
+        p.get("product", "") for p in data.get("scope", []) if p.get("product")
+    ) or "Zoho Cloud Suite"
+
+    timeline = (data.get("timeline") or {}).get("overall") or "6 – 8 Weeks"
+
+    overview_map = {str(row.get("parameter", "")).strip().lower(): str(row.get("details", "")).strip() for row in data.get("project_overview_table", [])}
+
+    specs = [
+        ("Document Type", "Proposal"),
+        ("Project Name", project_name),
+        ("Document Version", "2.0"),
+        ("Status", status),
+        ("Prepared for", client_name),
+        ("Prepared By", COMPANY_NAME),
+        ("Target Platforms:", products),
+    ]
+
+    markets = client_data.get("markets") or overview_map.get("client markets") or overview_map.get("markets")
+    if markets:
+        specs.append(("Client Markets:", markets))
+
+    db = client_data.get("database") or overview_map.get("customer database") or overview_map.get("database")
+    if db:
+        specs.append(("Customer Database:", db))
+
+    future = client_data.get("future_requirement") or overview_map.get("future requirement")
+    if future:
+        specs.append(("Future Requirement:", future))
+    else:
+        specs.append(("Implementation Scope:", "Turnkey solution architecture, workflow automation, system integration, and phased milestone governance."))
+
+    specs.append(("Estimated Effort:", timeline))
+    specs.append(("Date", _ordinal_day()))
+    return specs
+
+
 # --------------------------------------------------------------------------- DOCX (house style)
 def build_docx(data, output):
     from docx import Document
@@ -497,6 +540,15 @@ def build_docx(data, output):
     for sec in doc.sections:
         sec.top_margin = Inches(0.70); sec.bottom_margin = Inches(0.70)
         sec.left_margin = Inches(0.75); sec.right_margin  = Inches(0.75)
+        sec.different_first_page_header_footer = True
+        ftr = sec.footer
+        fp = ftr.paragraphs[0]
+        fp.paragraph_format.space_before = Pt(6)
+        r1 = fp.add_run(f"{COMPANY_NAME}  \u2022  Confidential")
+        r1.font.size = Pt(8); r1.font.color.rgb = RGBColor(0x00, 0x2b, 0x49); r1.bold = True
+        r2 = fp.add_run(f"    |    {COMPANY_EMAIL}    |    {COMPANY_WEBSITE}")
+        r2.font.size = Pt(8); r2.font.color.rgb = RGBColor(0x64, 0x74, 0x8b)
+
     doc.styles["Normal"].font.name = "Calibri"
     doc.styles["Normal"].font.size = Pt(10)
     doc.styles["Normal"].font.color.rgb = RGBColor(0x1e, 0x29, 0x3b)
@@ -521,39 +573,27 @@ def build_docx(data, output):
             p_r = logo_tbl.cell(0, 2).paragraphs[0]
             p_r.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.RIGHT
             p_r.add_run().add_picture(LOGO_BADGE_PATH, width=Inches(2.0))
-        doc.add_paragraph().paragraph_format.space_after = Pt(24)
+        doc.add_paragraph().paragraph_format.space_after = Pt(18)
 
-    for text, sz, color, after in [
-        (project_name, 20, RGBColor(0x1a, 0x36, 0x5d), 6),
-        ("Project Proposal & Scope of Work", 11, RGBColor(0x47, 0x55, 0x69), 36),
-    ]:
-        p = doc.add_paragraph()
-        p.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
-        rn = p.add_run(text)
-        rn.bold = True; rn.font.size = Pt(sz); rn.font.color.rgb = color
-        p.paragraph_format.space_after = Pt(after)
+    p = doc.add_paragraph()
+    p.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    rn = p.add_run(project_name)
+    rn.bold = True; rn.font.size = Pt(16); rn.font.color.rgb = RGBColor(0x00, 0x2b, 0x49)
+    p.paragraph_format.space_after = Pt(16)
 
-    pp = doc.add_paragraph()
-    pp.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
-    r1 = pp.add_run("Prepared for\n"); r1.font.size = Pt(10); r1.font.color.rgb = RGBColor(0x64, 0x74, 0x8b)
-    r2 = pp.add_run(client_name); r2.bold = True; r2.font.size = Pt(15); r2.font.color.rgb = RGBColor(0x0f, 0x17, 0x2a)
-    pp.paragraph_format.space_after = Pt(40)
-
-    cover_tbl = doc.add_table(rows=1, cols=4)
-    cover_tbl.style = "Table Grid"
-    _cell_margins(cover_tbl, top=100, bot=100, left=140, right=140)
-    _borders(cover_tbl)
-    for i, (label, val) in enumerate([
-        ("PRESENTED BY:", COMPANY_NAME),
-        ("PRESENTED TO:", client_name),
-        ("DATE:", _ordinal_day()),
-        ("DOCUMENT STATUS:", data.get("status", "DRAFT")),
-    ]):
-        cell = cover_tbl.cell(0, i); cell.width = Inches(1.75)
-        _shd(cell, "f1f5f9")
-        p = cell.paragraphs[0]; p.paragraph_format.space_after = Pt(2)
-        lr = p.add_run(label + "\n"); lr.bold = True; lr.font.size = Pt(8); lr.font.color.rgb = RGBColor(0x1a, 0x36, 0x5d)
-        vr = p.add_run(val); vr.font.size = Pt(9.5); vr.font.color.rgb = RGBColor(0x1e, 0x29, 0x3b)
+    cover_specs = _get_cover_specs(data)
+    cov_tbl = doc.add_table(rows=len(cover_specs), cols=2)
+    cov_tbl.style = "Table Grid"
+    _cell_margins(cov_tbl, top=100, bot=100, left=140, right=140)
+    _borders(cov_tbl, color="b8c9d9", sz="4")
+    for idx, (lbl, val) in enumerate(cover_specs):
+        c0 = cov_tbl.cell(idx, 0); c0.width = Inches(2.3)
+        _shd(c0, "edf3f8")
+        p0 = c0.paragraphs[0]; p0.paragraph_format.space_before = Pt(3); p0.paragraph_format.space_after = Pt(3)
+        r0 = p0.add_run(lbl); r0.bold = True; r0.font.size = Pt(9); r0.font.color.rgb = RGBColor(0x0f, 0x17, 0x2a)
+        c1 = cov_tbl.cell(idx, 1); c1.width = Inches(4.7)
+        p1 = c1.paragraphs[0]; p1.paragraph_format.space_before = Pt(3); p1.paragraph_format.space_after = Pt(3)
+        r1 = p1.add_run(str(val)); r1.font.size = Pt(9); r1.font.color.rgb = RGBColor(0x1e, 0x29, 0x3b)
     doc.add_page_break()
 
     # helpers
@@ -719,20 +759,6 @@ def build_docx(data, output):
         doc.add_paragraph().paragraph_format.space_after = Pt(6)
 
 
-    # Footer bar
-    doc.add_paragraph().paragraph_format.space_before = Pt(18)
-    ft_tbl = doc.add_table(rows=1, cols=1)
-    ft_tbl.style = "Table Grid"
-    from docx.oxml import parse_xml
-    from docx.oxml.ns import nsdecls
-    ft_cell = ft_tbl.cell(0, 0)
-    tcPr = ft_cell._tc.get_or_add_tcPr()
-    tcPr.append(parse_xml(f'<w:shd {nsdecls("w")} w:fill="1a365d"/>'))
-    ft_cell.width = Inches(7.0)
-    fp = ft_cell.paragraphs[0]
-    fp.paragraph_format.space_before = Pt(4); fp.paragraph_format.space_after = Pt(4)
-    fr = fp.add_run(f"{COMPANY_NAME}   |   {COMPANY_EMAIL}   |   {COMPANY_WEBSITE}")
-    fr.font.size = Pt(8); fr.font.color.rgb = RGBColor(0xff, 0xff, 0xff); fr.bold = True
     doc.save(output)
     return output
 
@@ -779,23 +805,17 @@ def build_html(data):
     out = []
     out.append(f"""<!doctype html><html><head><meta charset="utf-8">
 <style>
-@page {{ size: A4; margin: 24mm 15mm 26mm 15mm; }}
+@page {{ size: A4; margin: 28mm 15mm 22mm 15mm; }}
 body {{ font-family: 'DejaVu Sans', sans-serif; font-size: 9pt; color: #1e293b; line-height: 1.5; }}
-table.hdr-tbl {{ position: fixed; top: -18mm; left: 0; right: 0; width: 100%; font-size: 7.5pt; color: #64748b; border-bottom: 1.5px solid #e2e8f0; }}
-table.ftr-tbl {{ position: fixed; bottom: -20mm; left: 0; right: 0; width: 100%; font-size: 7.5pt; }}
-table.hdr-tbl td {{ padding: 2px 0; color: #94a3b8; }}
-table.ftr-tbl td {{ padding: 0; }}
-.ftr-inner {{ background-color: #1a365d; color: #e2e8f0; padding: 4px 8px; font-size: 7.5pt; }}
-.pg:before {{ content: counter(page); }}
-.cover-title {{ font-size: 18pt; font-weight: bold; color: #1a365d; line-height: 1.3; margin: 0 0 3mm 0; text-align: center; }}
-.cover-sub {{ font-size: 9.5pt; color: #475569; margin: 0 0 14mm 0; text-align: center; letter-spacing: 0.5px; }}
-.cover-divider {{ border: none; border-top: 1.5px solid #e2e8f0; margin: 8mm 20mm; }}
-.cover-prep {{ font-size: 8pt; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2mm; text-align: center; }}
-.cover-client {{ font-size: 16pt; font-weight: bold; color: #0f172a; margin-bottom: 10mm; text-align: center; }}
-table.cover-meta {{ width: 100%; border-collapse: collapse; margin-top: 6mm; }}
-table.cover-meta td {{ border: 1px solid #e2e8f0; background: #f8fafc; padding: 8px 10px; width: 25%; vertical-align: top; }}
-.lbl {{ font-size: 7pt; font-weight: bold; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 3px; }}
-.val {{ font-size: 9pt; font-weight: 600; color: #1e293b; }}
+table.hdr-tbl {{ position: fixed; top: -21mm; left: 0; right: 0; width: 100%; border-collapse: collapse; }}
+table.hdr-tbl td {{ vertical-align: middle; }}
+table.ftr-tbl {{ position: fixed; bottom: -8mm; left: 0; right: 0; width: 100%; border-collapse: collapse; border-top: 1px solid #cbd5e1; font-size: 7.5pt; color: #64748b; }}
+table.ftr-tbl td {{ padding-top: 2.5mm; vertical-align: middle; }}
+.cover-title {{ font-size: 15.5pt; font-weight: bold; color: #002B49; line-height: 1.35; margin: 0 0 10mm 0; text-align: center; }}
+table.cover-spec {{ width: 100%; border-collapse: collapse; }}
+table.cover-spec td {{ border: 1px solid #b8c9d9; padding: 7.5px 12px; font-size: 9pt; line-height: 1.45; vertical-align: middle; }}
+table.cover-spec td.spec-lbl {{ width: 33%; background-color: #edf3f8; color: #0f172a; font-weight: bold; }}
+table.cover-spec td.spec-val {{ width: 67%; background-color: #ffffff; color: #1e293b; }}
 h2.sh {{ background-color: #1a365d; color: #fff; padding: 6px 10px; font-size: 11pt; font-weight: bold; border-radius: 3px; margin: 18px 0 8px 0; }}
 h3.mh {{ color: #008080; font-size: 10pt; font-weight: bold; border-bottom: 1.5px solid #008080; padding-bottom: 3px; margin: 14px 0 6px 0; }}
 p.body {{ font-size: 9pt; margin: 0 0 8px 0; line-height: 1.45; }}
@@ -813,43 +833,28 @@ ul.cat-ul li {{ font-size: 9pt; margin-bottom: 3px; }}
 .ib li {{ font-size: 8.5pt; color: #334155; margin-bottom: 2px; }}
 </style></head><body>""")
 
+    main_img  = f'<img src="{logo_main}" style="height:38px;" alt="Wooplix">' if logo_main else ''
+    badge_img = f'<img src="{logo_badge}" style="height:26px;" alt="Badges">' if logo_badge else ''
+
     out.append(f"""<table class="hdr-tbl"><tr>
-<td>{esc(hdr)} &#8212; Project Proposal &amp; SOW</td>
-<td style="text-align:right;color:#94a3b8;">Page <span class="pg"></span></td>
-</tr></table>""")
-    out.append(f"""<table class="ftr-tbl"><tr>
-<td colspan="2"><div class="ftr-inner">
-<table style="width:100%;border-collapse:collapse;"><tr>
-<td style="color:#e2e8f0;">{esc(COMPANY_NAME)}</td>
-<td style="text-align:center;color:#94a3b8;">{esc(COMPANY_EMAIL)}</td>
-<td style="text-align:right;color:#94a3b8;">{esc(COMPANY_WEBSITE)}</td>
-</tr></table>
-</div></td>
+  <td style="width:55%;">{main_img}</td>
+  <td style="width:45%; text-align:right;">{badge_img}</td>
 </tr></table>""")
 
-    # Cover
-    out.append('<div style="page-break-after: always; padding-top: 8mm;">')
-    # Dual-logo row
-    main_img  = f'<img src="{logo_main}" style="height:65px;" alt="Wooplix">'    if logo_main  else ''
-    badge_img = f'<img src="{logo_badge}" style="height:42px;" alt="Zoho Partner">'\
-                if logo_badge else ''
-    out.append(
-        f'<table style="width:100%; border-collapse:collapse; margin-bottom: 18mm;"><tr>'
-        f'<td style="width:60%; vertical-align:middle;">{main_img}</td>'
-        f'<td style="width:40%; vertical-align:middle; text-align:right;">{badge_img}</td>'
-        f'</tr></table>'
-    )
+    out.append(f"""<table class="ftr-tbl"><tr>
+  <td style="width:48%; text-align:left; white-space:nowrap;"><strong style="color:#002B49;">{esc(COMPANY_NAME)}</strong> &bull; Confidential</td>
+  <td style="width:28%; text-align:center;">{esc(COMPANY_EMAIL)}</td>
+  <td style="width:24%; text-align:right;">{esc(COMPANY_WEBSITE)}</td>
+</tr></table>""")
+
+    # Cover Page
+    cover_specs = _get_cover_specs(data)
+    out.append('<div style="page-break-after: always; padding-top: 14mm;">')
     out.append(f'<div class="cover-title">{esc(project)}</div>')
-    out.append('<div class="cover-sub">Project Proposal &amp; Scope of Work</div>')
-    out.append('<hr class="cover-divider">')
-    out.append('<div class="cover-prep">Prepared for</div>')
-    out.append(f'<div class="cover-client">{esc(client_name)}</div>')
-    out.append('<table class="cover-meta"><tr>'
-               f'<td><span class="lbl">Presented by</span><span class="val">{esc(COMPANY_NAME)}</span></td>'
-               f'<td><span class="lbl">Presented to</span><span class="val">{esc(client_name)}</span></td>'
-               f'<td><span class="lbl">Date</span><span class="val">{esc(_ordinal_day())}</span></td>'
-               f'<td><span class="lbl">Status</span><span class="val">{esc(data.get("status","Draft"))}</span></td>'
-               '</tr></table>')
+    out.append('<table class="cover-spec">')
+    for lbl, val in cover_specs:
+        out.append(f'<tr><td class="spec-lbl">{esc(lbl)}</td><td class="spec-val">{esc(str(val))}</td></tr>')
+    out.append('</table>')
     out.append('</div>')
 
     # Sec 1
