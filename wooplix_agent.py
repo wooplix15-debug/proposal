@@ -246,17 +246,33 @@ def draft_proposal(req_text, reference_text):
         user_prompt = ("PREVIOUS DEALS (precedent from Wooplix CRM — use only per the PRECEDENT RULES)\n\n"
                        + reference_text + "\n\n" + user_prompt)
     client = Groq(api_key=GROQ_API_KEY)
+
+    candidate_models = [GROQ_MODEL]
+    for fallback in ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
+        if fallback not in candidate_models:
+            candidate_models.append(fallback)
+
     last = {}
-    for attempt in range(2):
-        resp = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_prompt}],
-            temperature=0.1, max_completion_tokens=16000,
-            response_format={"type": "json_object"},
-        )
-        last = parse_json_safely(resp.choices[0].message.content)
-        if _looks_like_proposal(last):
-            return last
+    for model_name in candidate_models:
+        for attempt in range(2):
+            try:
+                # Try json_object format first; on retry try without strict json_object format (parse_json_safely extracts it)
+                kwargs = {
+                    "model": model_name,
+                    "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_prompt}],
+                    "temperature": 0.1,
+                    "max_completion_tokens": 16000,
+                }
+                if attempt == 0:
+                    kwargs["response_format"] = {"type": "json_object"}
+                resp = client.chat.completions.create(**kwargs)
+                raw_text = resp.choices[0].message.content or ""
+                last = parse_json_safely(raw_text)
+                if _looks_like_proposal(last):
+                    return last
+            except Exception as exc:
+                print(f"Groq generation attempt {attempt + 1} with {model_name} failed: {exc}")
+                continue
     return last
 
 
