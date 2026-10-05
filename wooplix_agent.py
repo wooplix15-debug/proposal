@@ -862,12 +862,13 @@ ul.cat-ul li {{ font-size: 9pt; margin-bottom: 3px; }}
     # Sec 6 — Open Points
     open_pts = data.get("open_points", []) or []
     if open_pts:
+        out.append('<div style="page-break-inside:avoid;">')
         out.append('<h2 class="sh">6. Points to be Finalized During Discovery</h2>')
         out.append('<p class="body">The following items require collaborative confirmation during initial discovery workshops:</p>')
         out.append('<div class="ib"><ul>')
         for pt in open_pts:
             out.append(f'<li>{esc(pt)}</li>')
-        out.append('</ul></div>')
+        out.append('</ul></div></div>')
 
     # Sec 7 — Timeline
     tl = data.get("timeline") or {}
