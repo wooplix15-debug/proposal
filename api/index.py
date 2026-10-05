@@ -73,6 +73,7 @@ def logo():
 
 
 @app.get("/api/health")
+@app.get("/api/index.py/health")
 @app.get("/health")
 @app.get("/api/index.py")
 def health():
@@ -106,6 +107,7 @@ async def _extract_uploads(files, work, prefix):
 
 
 @app.post("/api/analyze")
+@app.post("/api/index.py/analyze")
 @app.post("/analyze")
 async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
                               text: Optional[str] = Form(None),
@@ -157,6 +159,7 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
 
 
 @app.post("/api/generate")
+@app.post("/api/index.py/generate")
 @app.post("/generate")
 @app.post("/api/index.py")
 async def generate(request: Request, reviews: str = Form(...)):
