@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-10-05",
+  "working_days_per_week": 5,
+  "method": "Ceiling of the mean of published range midpoints, converted using five working days per week. Planning benchmarks, not a statistical market-wide average or a delivery commitment.",
+  "sources": [
+    {
+      "name": "Zocoden",
+      "url": "https://zocoden.in/zoho-analytics"
+    },
+    {
+      "name": "Aaxonix",
+      "url": "https://aaxonix.com/resources/zoho-analytics-implementation-partner/"
+    },
+    {
+      "name": "Elsner",
+      "url": "https://www.elsner.com/zoho-crm-implementation-guide/"
+    },
+    {
+      "name": "CodeStringers",
+      "url": "https://www.codestringers.com/post/zoho-implementation-timeline"
+    }
+  ],
+  "estimates": [
+    {
+      "product": "Zoho Analytics",
+      "published_weeks": [
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          8
+        ]
+      ],
+      "source_names": [
+        "Zocoden",
+        "Aaxonix"
+      ],
+      "includes": "Source integration, dashboards, reporting, training and handover."
+    },
+    {
+      "product": "Integration / Customization",
+      "published_weeks": [
+        [
+          1,
+          3
+        ]
+      ],
+      "source_names": [
+        "Elsner"
+      ],
+      "includes": "Cross-application integration including requested WhatsApp and SMS connection; excludes Analytics data connections already in the Analytics phase."
+    },
+    {
+      "product": "Data Migration / Cleansing",
+      "published_weeks": [
+        [
+          1,
+          3
+        ],
+        [
+          1,
+          3
+        ]
+      ],
+      "source_names": [
+        "Elsner",
+        "CodeStringers"
+      ],
+      "includes": "Data cleaning, mapping, migration and validation."
+    },
+    {
+      "product": "Training",
+      "published_weeks": [
+        [
+          1,
+          2
+        ],
+        [
+          1,
+          2
+        ]
+      ],
+      "source_names": [
+        "Elsner",
+        "CodeStringers"
+      ],
+      "includes": "Practical training across requested applications; Analytics introduction already covered in Analytics handover."
+    },
+    {
+      "product": "Post-Implementation Support",
+      "published_weeks": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          4
+        ]
+      ],
+      "source_names": [
+        "CodeStringers",
+        "Elsner"
+      ],
+      "includes": "Proposed initial support following rollout; excluded from implementation total."
+    }
+  ]
+}

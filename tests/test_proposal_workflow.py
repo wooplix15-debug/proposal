@@ -88,12 +88,12 @@ class ProposalWorkflowTests(unittest.TestCase):
 
     def test_partial_timeline_is_not_presented_as_a_total(self):
         crm = next(x for x in self.records if x.get('product') == 'Zoho CRM')
-        analysis = {'requirement_sections': [{'product': 'Zoho CRM'}, {'product': 'Zoho Analytics'}],
+        analysis = {'requirement_sections': [{'product': 'Zoho CRM'}, {'product': 'Unspecified custom application'}],
                     'duration_estimates': [crm], 'questions': []}
         proposal = {'timeline': {'overall': '6-8 days', 'phases': [{'phase': 'Zoho One', 'duration': '14-18 days'}]}}
         result = workflow.apply_actual_delivery_timeline(proposal, analysis, {})['timeline']
         self.assertTrue(result['overall'].startswith('To be confirmed'))
-        self.assertEqual([x['phase'] for x in result['phases']], ['Zoho CRM', 'Zoho Analytics'])
+        self.assertEqual([x['phase'] for x in result['phases']], ['Zoho CRM', 'Unspecified custom application'])
         self.assertEqual(result['phases'][1]['duration'], 'To be confirmed')
 
     def test_all_requested_cost_categories_are_preserved_without_invented_prices(self):
@@ -121,6 +121,8 @@ class ProposalWorkflowTests(unittest.TestCase):
                          'Implementation Notes', 'Valid for 30 days', 'Actual Delivery Reference']:
             self.assertNotIn(unwanted, html)
         self.assertIn('Assign leads to BDMs.', html)
+        self.assertIn('cover-spec', html)
+        self.assertIn('Configuration Matrix', html)
 
     def test_export_preserves_all_requested_scope_even_if_model_omits_products(self):
         sections = [{'product': 'Zoho CRM', 'requirements': []}, {'product': 'Zoho Backstage', 'requirements': []}]
@@ -133,6 +135,20 @@ class ProposalWorkflowTests(unittest.TestCase):
             draft = agent.draft_proposal(REQ, '', sections)
             self.assertEqual(client.return_value.chat.completions.create.call_count, 1)
         self.assertEqual(coverage_gaps(draft, sections), [])
+
+    def test_benchmarks_fill_missing_times_without_overwriting_actuals(self):
+        crm = next(x for x in self.records if x.get('product') == 'Zoho CRM')
+        analysis = {'requirement_sections': [{'product': 'Zoho CRM'}, {'product': 'Zoho Analytics'},
+                    {'product': 'Integration / Customization'}, {'product': 'WhatsApp & SMS Integration'},
+                    {'product': 'Post-Implementation Support'}], 'duration_estimates': [crm], 'questions': []}
+        timeline = workflow.apply_actual_delivery_timeline({}, analysis, {})['timeline']
+        phases = {x['phase']: x['duration'] for x in timeline['phases']}
+        self.assertEqual(phases['Zoho CRM'].replace('–', '-'), '6-8 working days')
+        self.assertEqual(phases['Zoho Analytics'], '22 working days')
+        self.assertEqual(phases['WhatsApp & SMS Integration'], 'Included in integration phase')
+        self.assertTrue(timeline['overall'].startswith('38-40 working days'))
+        self.assertIn('assuming sequential delivery', timeline['overall'])
+        self.assertTrue(timeline['benchmark_sources'])
 
 
 if __name__ == '__main__':

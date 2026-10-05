@@ -10,6 +10,20 @@ import re
 import wooplix_agent as agent
 from proposal_scope import requested_products, scope_inventory, product_matches, preserve_source_bullets
 
+def market_estimate(product):
+    """Return a versioned local planning estimate; never replace saved actuals."""
+    import math
+    from pathlib import Path
+    catalog = json.loads(Path(__file__).with_name('market_delivery_benchmarks.json').read_text())
+    row = next((x for x in catalog['estimates'] if product_matches(product, x['product'])), None)
+    if not row:
+        return None
+    days = math.ceil(sum((lo + hi) / 2 for lo, hi in row['published_weeks']) / len(row['published_weeks']) * catalog['working_days_per_week'])
+    return {'product': product, 'days': days, 'days_min': days, 'days_max': days,
+            'duration_basis': '', 'kind': 'market_estimate', 'scope': row['includes'],
+            'sources': [x for x in catalog['sources'] if x['name'] in row['source_names']]}
+
+
 REQUIREMENT_PROMPT = '''Extract the customer's complete requirement into a checklist.
 Use ONLY the supplied requirement, never general product knowledge. Do not invent tasks,
 features, integrations, durations, user counts, support terms or prices. Each string in
@@ -33,7 +47,7 @@ when time data is missing. Match only baselines relevant to the new request; nev
 invent figures, add buffers, or calculate a total without the confirmed schedule.
 Ask up to 7 focused questions for missing details that affect delivery. Prioritize
 undefined product scope (especially Backstage event workflows) and estimates for
-products with no saved time (such as Analytics). Other useful questions concern CRM
+products with no saved time only when no published planning benchmark exists. Other useful questions concern CRM
 data volume, messaging provider and volume, training format and support terms. Ask
 only what the client has not already provided; do not relist report names or known
 source systems. Do not ask about using saved actual times. The app adds the scheduling
@@ -143,9 +157,9 @@ def analyze(requirement, completed, crm, timing_sources=None):
         if not isinstance(options, list) or not all(isinstance(x, str) for x in options):
             raise ValueError('Invalid suggested answers')
         questions.append({'id': f'q{i}', 'question': q['question'][:1000],
-                          'reason': str(q.get('reason', ''))[:1000], 'options': options[:4]})
+                          'reason': str(q.get('reason', ''))[:1000], 'options': [x for x in options if not x.lower().strip().startswith('other')][:4]})
     for product in products:
-        if not any(x.get('product') == product and x.get('days') is not None for x in (timing_sources or [])):
+        if not market_estimate(product) and not any(x.get('product') == product and x.get('days') is not None for x in (timing_sources or [])):
             question = next((q for q in questions if product.lower() in q['question'].lower()
                              or product.lower().replace('zoho ', '') in q['question'].lower()), None)
             if question is None:
@@ -154,6 +168,7 @@ def analyze(requirement, completed, crm, timing_sources=None):
             question.update(question=f'What working-day estimate should we use for {product}?',
                             reason='This phase needs an estimate before the complete project schedule can be set.',
                             options=['Confirm during discovery', 'Enter an estimate using Other'])
+    questions = [q for q in questions if not ('estimate' in q['question'].lower() and any(p.lower() in q['question'].lower() and market_estimate(p) for p in products))]
     timing_by_id = {x['record_id']: x for x in (timing_sources or []) if x.get('days') is not None}
     uses = list(result.get('duration_uses') or [])
     # Saved baselines for explicitly requested products remain available even if
@@ -292,6 +307,8 @@ def apply_actual_delivery_timeline(proposal, analysis, answers):
     sections = analysis.get('requirement_sections') or [
         {'product': x.get('product', '')} for x in proposal.get('scope', [])]
     estimates = analysis.get('duration_estimates', [])
+    benchmark_sources = {}
+    used_market = False
     names = list(dict.fromkeys(x['product'] for x in sections if x.get('product')))
     if len([x for x in names if x.startswith('Zoho ') and x != 'Zoho One']) > 1:
         names = [x for x in names if x != 'Zoho One']
@@ -301,6 +318,9 @@ def apply_actual_delivery_timeline(proposal, analysis, answers):
     for name in names:
         # A licence or cost breakdown is not an implementation phase.
         if any(x in name.lower() for x in ('licen', 'commercial', 'cost', 'pricing')):
+            continue
+        if 'whatsapp' in name.lower() and any('integration / customization' in n.lower() for n in names):
+            phases.append({'phase': name, 'duration': 'Included in integration phase', 'key_activities': 'WhatsApp and SMS provider connection and campaign verification.', 'milestone': 'Messaging connection reviewed'})
             continue
         record = next((x for x in estimates if x.get('kind') == 'module_baseline'
                        and product_matches(name, x.get('product', ''))), None)
@@ -317,20 +337,30 @@ def apply_actual_delivery_timeline(proposal, analysis, answers):
                     if supplied:
                         record = dict(supplied, product=name, kind='user_estimate')
                         break
+            if not record:
+                record = market_estimate(name)
+                if record:
+                    used_market = True
+                    for source in record['sources']:
+                        benchmark_sources[source['name']] = source
             if record:
                 duration = _duration_text(record)
-                matched.append(record)
+                if 'support' not in name.lower():
+                    matched.append(record)
             else:
                 duration = 'To be confirmed'
             # Ongoing post-implementation support is separate from rollout time.
             if not record and 'support' not in name.lower():
                 complete = False
-        phases.append({'phase': name, 'duration': duration})
+        phases.append({'phase': name, 'duration': duration, 'estimate_basis': 'Published partner benchmark' if record and record.get('kind') == 'market_estimate' else 'Past delivery' if record and record.get('kind') == 'module_baseline' else 'Supplied estimate'})
     schedule = ''
     for question in analysis.get('questions', []):
         if any(word in question.get('question', '').lower() for word in ('schedule', 'one after another', 'overlap')):
             schedule = str(answers.get(question['id'], '')).lower()
             break
+    assumed_sequential = not schedule or schedule in ('leave open for discovery', 'confirm during discovery')
+    if assumed_sequential:
+        schedule = 'sequential'
     overall = 'To be confirmed after scope, dependencies and the remaining phase estimates are agreed.'
     bounds = [_duration_bounds(x) for x in matched]
     if complete and bounds and all(bounds):
@@ -346,7 +376,8 @@ def apply_actual_delivery_timeline(proposal, analysis, answers):
             def number(value):
                 return str(int(value)) if value.is_integer() else str(value)
             span = number(low) if low == high else number(low) + '-' + number(high)
-            overall = span + ' working days, subject to the confirmed scope and schedule.'
+            overall = span + ' working days' + (', assuming sequential delivery.' if assumed_sequential else ', subject to the confirmed scope and schedule.')
     proposal['timeline'] = {'phases': phases, 'overall': overall,
-                            'note': 'Indicative working days based on comparable completed work. Additional scope and dependencies may change the schedule.'}
+                            'note': 'Indicative planning schedule; scope, data quality and approvals may change delivery time. Past delivery times take priority; missing timings use published partner benchmarks (five working days per week). Messaging is included in integration; post-implementation support is excluded from the rollout total.' if used_market else 'Indicative working days based on past delivery. Scope and dependencies may change the schedule.',
+                            'benchmark_sources': list(benchmark_sources.values())}
     return proposal

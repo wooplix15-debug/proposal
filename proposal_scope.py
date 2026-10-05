@@ -236,6 +236,8 @@ def finalize_client_content(proposal, analysis, answers, requirement):
         if answer not in ('Leave open for discovery', 'Confirm during discovery', 'Enter an estimate using Other', ''):
             continue
         text = question['question'].lower()
+        if any(x in text for x in ('working-day estimate', 'schedule', 'overlap')) and not (proposal.get('timeline') or {}).get('overall', '').startswith('To be confirmed'):
+            continue
         if 'working-day estimate' in text:
             product = next((n for n in names if n.lower() in text), 'this phase')
             item = product + ' implementation duration.'
@@ -252,13 +254,13 @@ def finalize_client_content(proposal, analysis, answers, requirement):
         elif 'backstage' in text:
             item = 'Detailed Backstage event workflows.'
         elif 'training' in text:
-            item = 'Training format, participants and duration.'
+            item = 'Training format and participants.'
         elif 'support' in text:
-            item = 'Support scope, duration and response terms.'
+            item = 'Support response terms and coverage.'
         elif 'user' in text or 'licen' in text:
             item = 'User counts and licence requirements.'
         else:
-            item = question['question'].rstrip('?') + '.'
+            continue  # Do not repeat the raw questionnaire in the client proposal.
         if item not in pending:
             pending.append(item)
     proposal['open_points'] = pending

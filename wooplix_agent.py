@@ -359,20 +359,34 @@ def normalize_proposal(data):
         rows = item.get('configuration_table') or []
         if not rows:
             rows = [{'area': a.get('area', ''),
-                     'scope_description': '\n'.join(str(t).strip() for t in a.get('tasks', []) if str(t).strip())}
+                     'scope_description': '\n'.join('• ' + str(t).strip() for t in a.get('tasks', []) if str(t).strip())}
                     for a in item.get('areas', [])]
         scope.append({'product': item.get('product', ''), 'configuration_table': rows})
     out['scope'] = scope
-    out['status'] = 'DRAFT'
+    out.setdefault('project_overview_table', [
+        {'parameter': 'Engagement', 'details': 'Implementation, customization and practical training'},
+        {'parameter': 'Applications', 'details': ', '.join(x['product'] for x in scope if x['product'].startswith('Zoho '))},
+    ])
+    out.setdefault('categorized_prerequisites', {'Required inputs': out.get('prerequisites', [])} if out.get('prerequisites') else {})
+    out.setdefault('categorized_deliverables', {'Project handover': out.get('deliverables', [])} if out.get('deliverables') else {})
+    out['status'] = 'Proposal for review'
+    sections = {x['product']: x for x in scope}
+    for phase in (out.get('timeline') or {}).get('phases', []):
+        mod = sections.get(phase['phase']) or next((x for x in scope if phase['phase'] in x['product']), {})
+        tasks = '; '.join(r.get('scope_description', '') for r in mod.get('configuration_table', []))
+        phase.setdefault('key_activities', '; '.join(tasks.replace('• ', '').splitlines()[:2]))
+        phase.setdefault('milestone', 'Configured scope reviewed' if phase['phase'].startswith('Zoho ') else 'Completed work reviewed')
     return out
 
 
 def _get_cover_specs(data):
     client = data.get('client') or {}
-    rows = []
+    rows = [('Document Type', 'Proposal'), ('Project Name', client.get('project_name') or 'Zoho Implementation for Event Management')]
     if client.get('company_name'):
         rows.append(('Prepared for', client['company_name']))
-    rows += [('Prepared by', COMPANY_NAME), ('Date', _ordinal_day()), ('Status', 'Draft for review')]
+    rows += [('Prepared By', COMPANY_NAME),
+             ('Target Platforms', ', '.join(x['product'] for x in data.get('scope', []) if x['product'].startswith('Zoho '))),
+             ('Estimated Duration', (data.get('timeline') or {}).get('overall', '')), ('Date', _ordinal_day())]
     return rows
 
 
@@ -381,86 +395,297 @@ def build_docx(data, output):
     from docx.shared import Pt, Inches, RGBColor
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls
+    import docx.enum.text
+
     data = normalize_proposal(data)
+
+    def _shd(cell, fill):
+        tcPr = cell._tc.get_or_add_tcPr()
+        tcPr.append(parse_xml(f'<w:shd {nsdecls("w")} w:fill="{fill}"/>'))
+
+    def _cell_margins(table, top=120, bot=120, left=150, right=150):
+        tblPr = table._tbl.tblPr
+        tblPr.append(parse_xml(
+            f'<w:tblCellMar {nsdecls("w")}>'
+            f'<w:top w:w="{top}" w:type="dxa"/>'
+            f'<w:bottom w:w="{bot}" w:type="dxa"/>'
+            f'<w:left w:w="{left}" w:type="dxa"/>'
+            f'<w:right w:w="{right}" w:type="dxa"/>'
+            f'</w:tblCellMar>'
+        ))
+
+    def _borders(table, color="cbd5e1", sz="4"):
+        tblPr = table._tbl.tblPr
+        tblPr.append(parse_xml(
+            f'<w:tblBorders {nsdecls("w")}>'
+            f'<w:top w:val="single" w:sz="{sz}" w:space="0" w:color="{color}"/>'
+            f'<w:bottom w:val="single" w:sz="{sz}" w:space="0" w:color="{color}"/>'
+            f'<w:left w:val="single" w:sz="{sz}" w:space="0" w:color="{color}"/>'
+            f'<w:right w:val="single" w:sz="{sz}" w:space="0" w:color="{color}"/>'
+            f'<w:insideH w:val="single" w:sz="{sz}" w:space="0" w:color="{color}"/>'
+            f'<w:insideV w:val="single" w:sz="{sz}" w:space="0" w:color="{color}"/>'
+            f'</w:tblBorders>'
+        ))
+
+    def _make_table(ncols, widths, col_names):
+        tbl = doc.add_table(rows=1, cols=ncols)
+        tbl.style = "Table Grid"
+        _cell_margins(tbl)
+        _borders(tbl)
+        tbl.rows[0]._tr.get_or_add_trPr().append(parse_xml(f'<w:tblHeader {nsdecls("w")}/>'))
+        for row in tbl.rows:
+            row._tr.get_or_add_trPr().append(parse_xml(f'<w:cantSplit {nsdecls("w")}/>'))
+            for i, w in enumerate(widths):
+                if i < len(row.cells):
+                    row.cells[i].width = Inches(w)
+        for i, c in enumerate(tbl.rows[0].cells):
+            _shd(c, NAVY_HEX)
+            p = c.paragraphs[0]
+            p.paragraph_format.space_before = Pt(4)
+            p.paragraph_format.space_after  = Pt(4)
+            rn = p.add_run(col_names[i] if i < len(col_names) else "")
+            rn.bold = True; rn.font.size = Pt(9); rn.font.color.rgb = RGBColor(0xff, 0xff, 0xff)
+        return tbl
+
+    def _add_data_row(tbl, widths, cells_text, zebra=False, bold_first=True):
+        r = tbl.add_row()
+        r._tr.get_or_add_trPr().append(parse_xml(f'<w:cantSplit {nsdecls("w")}/>'))
+        for i, c in enumerate(r.cells):
+            c.width = Inches(widths[i])
+            if zebra:
+                _shd(c, LIGHT_BG)
+            p = c.paragraphs[0]
+            p.paragraph_format.space_before = Pt(3); p.paragraph_format.space_after = Pt(3)
+            rn = p.add_run(str(cells_text[i]) if i < len(cells_text) else "")
+            rn.bold = bold_first and i == 0; rn.font.size = Pt(8.5)
+
     doc = Document()
     for sec in doc.sections:
-        sec.top_margin = sec.bottom_margin = Inches(0.7)
-        sec.left_margin = sec.right_margin = Inches(0.75)
-        footer = sec.footer.paragraphs[0]
-        footer.add_run(COMPANY_NAME + ' | ' + COMPANY_EMAIL).font.size = Pt(8)
-    normal = doc.styles['Normal']
-    normal.font.name = 'Calibri'
-    normal.font.size = Pt(10)
-    normal.paragraph_format.space_after = Pt(5)
-    for style in ['Heading 1', 'Heading 2', 'Heading 3']:
-        doc.styles[style].font.name = 'Calibri'
-        doc.styles[style].font.color.rgb = RGBColor.from_string(NAVY_HEX)
-    if os.path.exists(LOGO_MAIN_PATH):
-        doc.add_picture(LOGO_MAIN_PATH, width=Inches(2.1))
-    doc.add_heading((data.get('client') or {}).get('project_name') or 'Implementation Proposal', 0)
-    for label, value in _get_cover_specs(data):
-        doc.add_paragraph(label + ': ' + str(value))
-    doc.add_heading('Project overview', 1)
-    doc.add_paragraph(data.get('project_introduction', ''))
+        sec.top_margin = Inches(0.70); sec.bottom_margin = Inches(0.70)
+        sec.left_margin = Inches(0.75); sec.right_margin  = Inches(0.75)
+        sec.different_first_page_header_footer = True
+        ftr = sec.footer
+        fp = ftr.paragraphs[0]
+        fp.paragraph_format.space_before = Pt(6)
+        r1 = fp.add_run(f"{COMPANY_NAME}  \u2022  Confidential")
+        r1.font.size = Pt(8); r1.font.color.rgb = RGBColor(0x00, 0x2b, 0x49); r1.bold = True
+        r2 = fp.add_run(f"    |    {COMPANY_EMAIL}    |    {COMPANY_WEBSITE}")
+        r2.font.size = Pt(8); r2.font.color.rgb = RGBColor(0x64, 0x74, 0x8b)
 
-    def table(headers, rows, widths=None):
-        tbl = doc.add_table(rows=1, cols=len(headers))
-        tbl.style = 'Table Grid'
-        tbl.rows[0]._tr.get_or_add_trPr().append(parse_xml(f'<w:tblHeader {nsdecls("w")}/>'))
-        for cell, label in zip(tbl.rows[0].cells, headers):
-            cell.text = label
-            cell.paragraphs[0].runs[0].bold = True
-        for row in rows:
-            cells = tbl.add_row().cells
-            for cell, value in zip(cells, row):
-                cell.text = str(value)
-            cells[0]._tc.getparent().get_or_add_trPr().append(parse_xml(f'<w:cantSplit {nsdecls("w")}/>'))
-        if widths:
-            tbl.autofit = False
-            for row in tbl.rows:
-                for cell, width in zip(row.cells, widths):
-                    cell.width = Inches(width)
-        doc.add_paragraph()
+    doc.styles["Normal"].font.name = "Calibri"
+    doc.styles["Normal"].font.size = Pt(10)
+    doc.styles["Normal"].font.color.rgb = RGBColor(0x1e, 0x29, 0x3b)
 
-    doc.add_heading('Scope of work', 1)
-    for module in data.get('scope', []):
-        doc.add_heading(module['product'], 2)
-        rows = module['configuration_table']
-        if rows and all(row.get('area') in ('Included work', 'Practical training topics', 'Confirmed details') for row in rows):
-            for row in rows:
-                for text in row.get('scope_description', '').splitlines():
-                    doc.add_paragraph(text, style='List Bullet')
-        else:
-            table(['Work area', 'Included activities'],
-                  [[row.get('area', ''), row.get('scope_description', '')] for row in rows], [1.65, 4.85])
-    for title, key in [('Client requirements', 'prerequisites'), ('Deliverables', 'deliverables')]:
-        values = data.get(key) or []
-        if values:
-            doc.add_heading(title, 1)
-            for value in values:
-                doc.add_paragraph(str(value), style='List Bullet')
-    timeline = data.get('timeline') or {}
-    if timeline.get('phases'):
-        doc.add_heading('Indicative timeline', 1)
-        table(['Work area', 'Estimated duration'],
-              [[x.get('phase', ''), x.get('duration', 'To be confirmed')] for x in timeline['phases']], [3.8, 2.7])
-        if timeline.get('overall'):
-            doc.add_paragraph('Overall schedule: ' + timeline['overall'])
-        if timeline.get('note'):
-            doc.add_paragraph(timeline['note'])
-    commercials = data.get('commercials') or {}
-    if commercials.get('items'):
-        doc.add_heading('Cost breakdown', 1)
-        table(['Service / cost category', 'Amount'],
-              [[x.get('item', ''), x.get('amount') or 'To be quoted'] for x in commercials['items']], [4.5, 2.0])
-        if commercials.get('total'):
-            doc.add_paragraph('Total: ' + commercials['total'])
-        if commercials.get('note'):
-            doc.add_paragraph(commercials['note'])
-    if data.get('open_points'):
-        doc.add_heading('Items to confirm', 1)
-        for item in data['open_points']:
-            doc.add_paragraph(str(item), style='List Bullet')
+    client_data  = data.get("client", {}) or {}
+    client_name  = client_data.get("company_name") or "Client"
+    project_name = client_data.get("project_name") or "Zoho Implementation for Event Management"
+
+    # Cover logos — main wordmark left, partner badge right
+    has_main  = os.path.exists(LOGO_MAIN_PATH)
+    has_badge = os.path.exists(LOGO_BADGE_PATH)
+    if has_main or has_badge:
+        logo_tbl = doc.add_table(rows=1, cols=3)
+        for row in logo_tbl.rows:
+            row.cells[0].width = Inches(4.2)
+            row.cells[1].width = Inches(0.4)
+            row.cells[2].width = Inches(2.4)
+        if has_main:
+            p_l = logo_tbl.cell(0, 0).paragraphs[0]
+            p_l.add_run().add_picture(LOGO_MAIN_PATH, width=Inches(3.8))
+        if has_badge:
+            p_r = logo_tbl.cell(0, 2).paragraphs[0]
+            p_r.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.RIGHT
+            p_r.add_run().add_picture(LOGO_BADGE_PATH, width=Inches(2.0))
+        doc.add_paragraph().paragraph_format.space_after = Pt(18)
+
+    p = doc.add_paragraph()
+    p.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
+    rn = p.add_run(project_name)
+    rn.bold = True; rn.font.size = Pt(16); rn.font.color.rgb = RGBColor(0x00, 0x2b, 0x49)
+    p.paragraph_format.space_after = Pt(16)
+
+    cover_specs = _get_cover_specs(data)
+    cov_tbl = doc.add_table(rows=len(cover_specs), cols=2)
+    cov_tbl.style = "Table Grid"
+    _cell_margins(cov_tbl, top=100, bot=100, left=140, right=140)
+    _borders(cov_tbl, color="b8c9d9", sz="4")
+    for idx, (lbl, val) in enumerate(cover_specs):
+        c0 = cov_tbl.cell(idx, 0); c0.width = Inches(2.3)
+        _shd(c0, "edf3f8")
+        p0 = c0.paragraphs[0]; p0.paragraph_format.space_before = Pt(3); p0.paragraph_format.space_after = Pt(3)
+        r0 = p0.add_run(lbl); r0.bold = True; r0.font.size = Pt(9); r0.font.color.rgb = RGBColor(0x0f, 0x17, 0x2a)
+        c1 = cov_tbl.cell(idx, 1); c1.width = Inches(4.7)
+        p1 = c1.paragraphs[0]; p1.paragraph_format.space_before = Pt(3); p1.paragraph_format.space_after = Pt(3)
+        r1 = p1.add_run(str(val)); r1.font.size = Pt(9); r1.font.color.rgb = RGBColor(0x1e, 0x29, 0x3b)
+    doc.add_page_break()
+
+    # helpers
+    def section_h(num, title):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(14); p.paragraph_format.space_after = Pt(6)
+        rn = p.add_run(f"{num}. {title}")
+        rn.bold = True; rn.font.size = Pt(13); rn.font.color.rgb = RGBColor(0x1a, 0x36, 0x5d)
+
+    def module_h(title):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(10); p.paragraph_format.space_after = Pt(4)
+        rn = p.add_run(title)
+        rn.bold = True; rn.font.size = Pt(11.5); rn.font.color.rgb = RGBColor(0x00, 0x80, 0x80)
+
+    def body_text(text, after=8):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(after); p.paragraph_format.line_spacing = 1.25
+        rn = p.add_run(str(text)); rn.font.size = Pt(10)
+
+    def cat_bullets(cat_name, items):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(6); p.paragraph_format.space_after = Pt(2)
+        rn = p.add_run(f"\u2022 {cat_name}")
+        rn.bold = True; rn.font.size = Pt(10.5); rn.font.color.rgb = RGBColor(0x1a, 0x36, 0x5d)
+        for it in items:
+            ip = doc.add_paragraph(style="List Bullet")
+            ip.paragraph_format.space_after = Pt(1)
+            ip.add_run(str(it)).font.size = Pt(9.5)
+
+    def info_box(title, items):
+        if not items:
+            return
+        tbl = doc.add_table(rows=1, cols=1); tbl.style = "Table Grid"
+        _cell_margins(tbl, top=90, bot=90, left=140, right=140)
+        cell = tbl.cell(0, 0); cell.width = Inches(7.0)
+        _shd(cell, "f0f7f7")
+        tcPr = cell._tc.get_or_add_tcPr()
+        tcPr.append(parse_xml(
+            f'<w:tcBorders {nsdecls("w")}>'
+            f'<w:left w:val="single" w:sz="24" w:space="0" w:color="{TEAL_HEX}"/>'
+            f'<w:top w:val="none"/><w:right w:val="none"/><w:bottom w:val="none"/>'
+            f'</w:tcBorders>'
+        ))
+        p = cell.paragraphs[0]; p.paragraph_format.space_after = Pt(3)
+        hr = p.add_run(f"Implementation Notes \u2014 {title}\n")
+        hr.bold = True; hr.font.size = Pt(9.5); hr.font.color.rgb = RGBColor(0x00, 0x80, 0x80)
+        for it in items:
+            ip = cell.add_paragraph(style="List Bullet")
+            ip.paragraph_format.space_after = Pt(2)
+            ip.add_run(str(it)).font.size = Pt(9)
+        doc.add_paragraph().paragraph_format.space_after = Pt(4)
+
+    # Section 1
+    section_h("1", "Executive Summary & Requirements Analysis")
+    body_text(data.get("project_introduction", ""))
+    ov_tbl = _make_table(2, [2.2, 4.8], ["Project Parameter", "Specification & Implementation Details"])
+    for idx, row in enumerate(data.get("project_overview_table", [])):
+        _add_data_row(ov_tbl, [2.2, 4.8], [row.get("parameter", ""), row.get("details", "")], zebra=idx % 2 == 1)
+    doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+    # Section 2 — Scope
+    section_h("2", "Detailed Scope of Work & Configuration Matrix")
+    body_text("The following section outlines the functional scope, configuration areas, and business logic grouped by product module:", after=8)
+    for mi, mod in enumerate(data.get("scope", []), 1):
+        prod = mod.get("product", f"Module {mi}")
+        module_h(f"2.{mi}  {prod} \u2014 Functional Scope & Configuration Specification")
+        p_ov = doc.add_paragraph(); p_ov.paragraph_format.space_after = Pt(4)
+        rn = p_ov.add_run(mod.get('overview', ''))
+        rn.italic = True; rn.font.size = Pt(9.5); rn.font.color.rgb = RGBColor(0x47, 0x55, 0x69)
+        cfg_rows = mod.get("configuration_table", [])
+        if cfg_rows:
+            has_rules = any(r.get("business_rules") for r in cfg_rows)
+            w = [1.8, 3.3, 1.9] if has_rules else [1.8, 5.2]
+            scope_tbl = _make_table(len(w), w, ["Configuration Area", "Scope & Key Activities"] + (["Business Rules & Logic"] if has_rules else []))
+            for ri, crow in enumerate(cfg_rows):
+                r = scope_tbl.add_row()
+                r._tr.get_or_add_trPr().append(parse_xml(f'<w:cantSplit {nsdecls("w")}/>'))
+                for ci, c in enumerate(r.cells):
+                    c.width = Inches(w[ci])
+                    if ri % 2 == 1:
+                        _shd(c, LIGHT_BG)
+                    p = c.paragraphs[0]
+                    p.paragraph_format.space_before = Pt(3); p.paragraph_format.space_after = Pt(3)
+                    text = [crow.get("area", ""), crow.get("scope_description", ""), crow.get("business_rules", "")][ci]
+                    rn = p.add_run(str(text)); rn.font.size = Pt(8.5)
+                    if ci == 0:
+                        rn.bold = True
+            doc.add_paragraph().paragraph_format.space_after = Pt(4)
+        info_box(prod, mod.get("key_considerations", []))
+
+    # Section 3 — Integration (optional)
+    integ = data.get("integrations_table", [])
+    if integ:
+        section_h("3", "System Integration & Data Flow Architecture")
+        body_text("The following matrix outlines system-to-system integrations, data synchronization directions, and transactional logic:", after=6)
+        w = [1.8, 1.4, 1.6, 2.2]
+        int_tbl = _make_table(4, w, ["Interface / Flow", "Source \u2192 Target", "Sync Mode / Frequency", "Data Objects & Business Logic"])
+        for idx, irow in enumerate(integ):
+            _add_data_row(int_tbl, w, [
+                irow.get("interface", ""),
+                f"{irow.get('source_system','')} \u2192 {irow.get('target_system','')}",
+                irow.get("sync_mode", ""), irow.get("logic", ""),
+            ], zebra=idx % 2 == 1)
+        doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+    # Section 4 — Prerequisites
+    section_h("4", "Client Pre-requisites & Dependencies")
+    body_text("To ensure timely project kickoff, the client will provide the following:", after=6)
+    for cat, items in data.get("categorized_prerequisites", {}).items():
+        cat_bullets(cat, items)
+    doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+    # Section 5 — Deliverables
+    section_h("5", "Project Deliverables & Acceptance Criteria")
+    body_text("Wooplix Technologies will deliver the following verified artifacts and milestones:", after=6)
+    for cat, items in data.get("categorized_deliverables", {}).items():
+        cat_bullets(cat, items)
+    doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+    # Section 6 — Open Points
+    open_pts = data.get("open_points", []) or []
+    if open_pts:
+        section_h("6", "Points to be Finalized During Discovery (Open Points)")
+        body_text("The following items require collaborative confirmation during initial discovery workshops:", after=4)
+        for pt in open_pts:
+            ip = doc.add_paragraph(style="List Bullet")
+            ip.paragraph_format.space_after = Pt(2)
+            ip.add_run(str(pt)).font.size = Pt(9.5)
+        doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+    # Section 7 — Timeline
+    tl = data.get("timeline") or {}
+    phases = tl.get("phases", [])
+    if phases:
+        section_h("7", "Indicative Implementation Timeline & Milestone Roadmap")
+        body_text("The implementation follows a staged rollout to ensure minimal operational disruption:", after=6)
+        w = [2.0, 2.6, 1.1, 1.3]
+        tl_tbl = _make_table(4, w, ["Milestone / Phase", "Key Activities & Focus", "Duration", "Milestone Gate Sign-off"])
+        for idx, ph in enumerate(phases):
+            _add_data_row(tl_tbl, w, [
+                ph.get("phase", ""), ph.get("key_activities", ""),
+                ph.get("duration", ""), ph.get("milestone", ph.get("milestone_deliverable", "")),
+            ], zebra=idx % 2 == 1)
+        if tl.get("overall"):
+            p = doc.add_paragraph(); p.paragraph_format.space_before = Pt(6)
+            p.add_run("Estimated Total Duration: ").bold = True
+            p.add_run(str(tl["overall"]))
+        doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+        if tl.get("note"):
+            body_text(tl["note"], after=6)
+
+    # Section 8 — Commercials
+    com = data.get("commercials")
+    if com and isinstance(com, dict) and com.get("items"):
+        section_h("8", "Commercials & Professional Investment")
+        w = [0.5, 3.5, 1.8, 1.2]
+        com_tbl = _make_table(4, w, ["#", "Scope / Deliverable Description", "Basis / Resource Effort", "Investment"])
+        for idx, it in enumerate(com["items"], 1):
+            _add_data_row(com_tbl, w, [str(idx), it.get("item", ""), it.get("basis", ""), it.get("amount", "")], zebra=idx % 2 == 1)
+        if com.get("total"):
+            p = doc.add_paragraph(); p.paragraph_format.space_before = Pt(6)
+            p.add_run("Total Investment: ").bold = True; p.add_run(str(com["total"]))
+        if com.get("note"):
+            doc.add_paragraph().add_run(f"Commercial Terms: {com['note']}").italic = True
+        doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+
     doc.save(output)
     return output
 
@@ -488,94 +713,200 @@ def _badge_data_uri():
 
 
 def build_html(data):
-    """Render a concise client proposal using only supplied, relevant content."""
-    import html
+    """Render house-style proposal HTML for Dompdf.
+    Dompdf notes: position:fixed on tables works; flex/grid do not.
+    """
     data = normalize_proposal(data)
-    def esc(value):
-        return html.escape(str(value or '')).replace('–', '-').replace('—', '-')
-    out = ["""<!doctype html><html><head><meta charset="utf-8"><style>
-@page { size: A4; margin: 24mm 16mm 20mm 16mm; }
-body { font-family: 'DejaVu Sans', sans-serif; font-size: 9pt; color: #243044; line-height: 1.45; }
-.header { position: fixed; top: -17mm; width: 100%; border-bottom: 1px solid #cbd5e1; padding-bottom: 4mm; }
-.header td { border: 0; padding: 0 0 4mm; }
-.footer { position: fixed; bottom: -12mm; width: 100%; border-top: 1px solid #cbd5e1; padding-top: 3mm; font-size: 7pt; color: #64748b; }
-h1 { font-size: 18pt; color: #1a365d; line-height: 1.25; margin: 4mm 0; }
-h2 { font-size: 12pt; color: #1a365d; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin: 16px 0 8px; page-break-after: avoid; }
-h3 { font-size: 10pt; color: #1a365d; margin: 12px 0 5px; page-break-after: avoid; }
-p { margin: 0 0 7px; }
-.meta { font-size: 8pt; color: #64748b; margin-bottom: 12px; }
-table { width: 100%; border-collapse: collapse; margin: 0 0 10px; font-size: 8.5pt; }
-thead { display: table-header-group; }
-th { background-color: #edf2f7; text-align: left; color: #1a365d; }
-th, td { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; }
-tr { page-break-inside: avoid; }
-ul { margin: 2px 0 10px; padding-left: 18px; }
-li { margin-bottom: 4px; }
-.note { color: #64748b; font-size: 8pt; }
-</style></head><body>"""]
-    logo = _logo_data_uri()
-    out.append('<table class="header"><tr><td>' + (f'<img src="{logo}" style="height:25px;" alt="Wooplix">' if logo else esc(COMPANY_NAME)) + '</td></tr></table>')
-    out.append('<div class="footer">' + esc(COMPANY_NAME) + ' | ' + esc(COMPANY_EMAIL) + ' | ' + esc(COMPANY_WEBSITE) + '</div>')
-    title = (data.get('client') or {}).get('project_name') or 'Implementation Proposal'
-    out.append('<h1>' + esc(title) + '</h1>')
-    out.append('<p class="meta">' + '<br>'.join(esc(label) + ': ' + esc(value) for label, value in _get_cover_specs(data)) + '</p>')
-    out.append('<h2>Project overview</h2><p>' + esc(data.get('project_introduction')) + '</p>')
 
-    def table(headers, rows, widths=None):
-        out.append('<table><thead><tr>')
-        for index, label in enumerate(headers):
-            style = f' style="width:{widths[index]}%;"' if widths else ''
-            out.append('<th' + style + '>' + esc(label) + '</th>')
-        out.append('</tr></thead><tbody>')
-        for row in rows:
-            out.append('<tr>')
-            for value in row:
-                out.append('<td>' + esc(value).replace('\n', '<br>') + '</td>')
-            out.append('</tr>')
-        out.append('</tbody></table>')
+    def esc(x):
+        return (str(x if x is not None else "")
+                .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
-    out.append('<h2>Scope of work</h2>')
-    for module in data.get('scope', []):
-        out.append('<h3>' + esc(module['product']) + '</h3>')
-        rows = module['configuration_table']
-        if rows and all(row.get('area') in ('Included work', 'Practical training topics', 'Confirmed details') for row in rows):
-            out.append('<ul>')
-            for row in rows:
-                out.extend('<li>' + esc(text) + '</li>' for text in row.get('scope_description', '').splitlines())
-            out.append('</ul>')
-        else:
-            table(['Work area', 'Included activities'],
-                  [[row.get('area', ''), row.get('scope_description', '')] for row in rows], [26, 74])
-    for title, key in [('Client requirements', 'prerequisites'), ('Deliverables', 'deliverables')]:
-        items = data.get(key) or []
-        if items:
-            out.append('<h2>' + title + '</h2><ul>')
-            out.extend('<li>' + esc(x) + '</li>' for x in items)
-            out.append('</ul>')
-    timeline = data.get('timeline') or {}
-    if timeline.get('phases'):
-        out.append('<h2>Indicative timeline</h2>')
-        table(['Work area', 'Estimated duration'],
-              [[x.get('phase', ''), x.get('duration', 'To be confirmed')] for x in timeline['phases']], [57, 43])
-        if timeline.get('overall'):
-            out.append('<p><strong>Overall schedule:</strong> ' + esc(timeline['overall']) + '</p>')
-        if timeline.get('note'):
-            out.append('<p class="note">' + esc(timeline['note']) + '</p>')
-    commercials = data.get('commercials') or {}
-    if commercials.get('items'):
-        out.append('<h2>Cost breakdown</h2>')
-        table(['Service / cost category', 'Amount'],
-              [[x.get('item', ''), x.get('amount') or 'To be quoted'] for x in commercials['items']], [70, 30])
-        if commercials.get('total'):
-            out.append('<p><strong>Total:</strong> ' + esc(commercials['total']) + '</p>')
-        if commercials.get('note'):
-            out.append('<p class="note">' + esc(commercials['note']) + '</p>')
-    if data.get('open_points'):
-        out.append('<h2>Items to confirm</h2><ul>')
-        out.extend('<li>' + esc(x) + '</li>' for x in data['open_points'])
+    client      = data.get("client", {}) or {}
+    client_name = client.get("company_name") or "Client"
+    project     = client.get("project_name") or "Zoho Implementation for Event Management"
+    hdr         = re.sub(r'["\\\r\n]', " ", project)[:60]
+    logo_main  = _logo_data_uri()
+    logo_badge = _badge_data_uri()
+
+    out = []
+    out.append(f"""<!doctype html><html><head><meta charset="utf-8">
+<style>
+@page {{ size: A4; margin: 28mm 15mm 22mm 15mm; }}
+body {{ font-family: 'DejaVu Sans', sans-serif; font-size: 9pt; color: #1e293b; line-height: 1.5; }}
+table.hdr-tbl {{ position: fixed; top: -21mm; left: 0; right: 0; width: 100%; border-collapse: collapse; }}
+table.hdr-tbl td {{ vertical-align: middle; }}
+table.ftr-tbl {{ position: fixed; bottom: -8mm; left: 0; right: 0; width: 100%; border-collapse: collapse; border-top: 1px solid #cbd5e1; font-size: 7.5pt; color: #64748b; }}
+table.ftr-tbl td {{ padding-top: 2.5mm; vertical-align: middle; }}
+.cover-title {{ font-size: 15.5pt; font-weight: bold; color: #002B49; line-height: 1.35; margin: 0 0 10mm 0; text-align: center; }}
+table.cover-spec {{ width: 100%; border-collapse: collapse; }}
+table.cover-spec td {{ border: 1px solid #b8c9d9; padding: 7.5px 12px; font-size: 9pt; line-height: 1.45; vertical-align: middle; }}
+table.cover-spec td.spec-lbl {{ width: 33%; background-color: #edf3f8; color: #0f172a; font-weight: bold; }}
+table.cover-spec td.spec-val {{ width: 67%; background-color: #ffffff; color: #1e293b; }}
+h2.sh {{ page-break-after: avoid; background-color: #1a365d; color: #fff; padding: 6px 10px; font-size: 11pt; font-weight: bold; border-radius: 3px; margin: 18px 0 8px 0; }}
+h3.mh {{ page-break-after: avoid; color: #008080; font-size: 10pt; font-weight: bold; border-bottom: 1.5px solid #008080; padding-bottom: 3px; margin: 14px 0 6px 0; }}
+p.body {{ font-size: 9pt; margin: 0 0 8px 0; line-height: 1.45; }}
+p.desc {{ font-size: 9pt; font-style: italic; color: #475569; margin: 0 0 6px 0; }}
+table.dt {{ width: 100%; border-collapse: collapse; margin: 6px 0 12px 0; font-size: 8.5pt; }}
+table.dt thead {{ display: table-header-group; }}
+table.dt thead tr {{ page-break-after: avoid; }}
+table.dt th {{ background-color: #1a365d; color: #fff; font-weight: bold; text-align: left; padding: 6px 8px; border: 1px solid #1a365d; font-size: 8pt; text-transform: uppercase; }}
+table.dt td {{ border: 1px solid #cbd5e1; padding: 5px 8px; vertical-align: top; line-height: 1.35; }}
+table.dt tr {{ page-break-inside: avoid; }}
+table.dt tr:nth-child(even) td {{ background-color: #f8fafc; }}
+.cat-h {{ font-size: 9.5pt; font-weight: bold; color: #1a365d; margin: 8px 0 2px 0; }}
+ul.cat-ul {{ margin: 2px 0 8px 16px; padding: 0; }}
+ul.cat-ul li {{ font-size: 9pt; margin-bottom: 3px; }}
+.ib {{ background-color: #f0f7f7; border-left: 4px solid #008080; padding: 8px 12px; margin: 8px 0 12px 0; border-radius: 0 3px 3px 0; }}
+.ib h4 {{ margin: 0 0 4px 0; font-size: 9pt; color: #008080; font-weight: bold; }}
+.ib ul {{ margin: 0; padding-left: 16px; }}
+.ib li {{ font-size: 8.5pt; color: #334155; margin-bottom: 2px; }}
+</style></head><body>""")
+
+    main_img  = f'<img src="{logo_main}" style="height:38px;" alt="Wooplix">' if logo_main else ''
+    badge_img = f'<img src="{logo_badge}" style="height:26px;" alt="Badges">' if logo_badge else ''
+
+    out.append(f"""<table class="hdr-tbl"><tr>
+  <td style="width:55%;">{main_img}</td>
+  <td style="width:45%; text-align:right;">{badge_img}</td>
+</tr></table>""")
+
+    out.append(f"""<table class="ftr-tbl"><tr>
+  <td style="width:48%; text-align:left; white-space:nowrap;"><strong style="color:#002B49;">{esc(COMPANY_NAME)}</strong> &bull; Confidential</td>
+  <td style="width:28%; text-align:center;">{esc(COMPANY_EMAIL)}</td>
+  <td style="width:24%; text-align:right;">{esc(COMPANY_WEBSITE)}</td>
+</tr></table>""")
+
+    # Cover Page
+    cover_specs = _get_cover_specs(data)
+    out.append('<div style="page-break-after: always; padding-top: 14mm;">')
+    out.append(f'<div class="cover-title">{esc(project)}</div>')
+    out.append('<table class="cover-spec">')
+    for lbl, val in cover_specs:
+        out.append(f'<tr><td class="spec-lbl">{esc(lbl)}</td><td class="spec-val">{esc(str(val))}</td></tr>')
+    out.append('</table>')
+    out.append('</div>')
+
+    # Sec 1
+    out.append('<h2 class="sh">1. Executive Summary &amp; Requirements Analysis</h2>')
+    out.append(f'<p class="body">{esc(data.get("project_introduction",""))}</p>')
+    out.append('<table class="dt"><tr><th style="width:30%;">Project Parameter</th><th style="width:70%;">Specification &amp; Details</th></tr>')
+    for row in data.get("project_overview_table", []):
+        out.append(f'<tr><td><strong>{esc(row.get("parameter",""))}</strong></td><td>{esc(row.get("details",""))}</td></tr>')
+    out.append('</table>')
+
+    # Sec 2
+    out.append('<h2 class="sh">2. Detailed Scope of Work &amp; Configuration Matrix</h2>')
+    out.append('<p class="body">The following section outlines the functional scope, configuration areas, and business logic grouped by product module:</p>')
+    for mi, mod in enumerate(data.get("scope", []), 1):
+        prod = mod.get("product", f"Module {mi}")
+        out.append(f'<h3 class="mh">2.{mi}  {esc(prod)} &#8212; Functional Scope &amp; Configuration Specification</h3>')
+        if mod.get("overview"):
+            out.append(f'<p class="desc"><strong>Module Purpose:</strong>  {esc(mod["overview"])}</p>')
+        cfg_rows = mod.get("configuration_table", [])
+        if cfg_rows:
+            has_rules = any(r.get('business_rules') for r in cfg_rows)
+            out.append('<table class="dt"><tr><th style="width:25%;">Configuration Area</th><th>Scope &amp; Key Activities</th>' + ('<th>Business Rules &amp; Logic</th>' if has_rules else '') + '</tr>')
+            for crow in cfg_rows:
+                desc = esc(crow.get("scope_description", "")).replace("\n", "<br>")
+                out.append(f'<tr><td><strong>{esc(crow.get("area",""))}</strong></td><td>{desc}</td>' + (f'<td>{esc(crow.get("business_rules",""))}</td>' if has_rules else '') + '</tr>')
+            out.append('</table>')
+        cons = mod.get("key_considerations", [])
+        if cons:
+            out.append(f'<div class="ib"><h4>Implementation Notes &#8212; {esc(prod)}</h4><ul>')
+            for c in cons:
+                out.append(f'<li>{esc(c)}</li>')
+            out.append('</ul></div>')
+
+    # Sec 3 — Integration
+    integ = data.get("integrations_table", [])
+    if integ:
+        out.append('<h2 class="sh">3. System Integration &amp; Data Flow Architecture</h2>')
+        out.append('<p class="body">The following matrix outlines system-to-system integrations, synchronization directions, and transactional logic:</p>')
+        out.append('<table class="dt"><tr><th style="width:24%;">Interface / Flow</th><th style="width:20%;">Source &#8594; Target</th><th style="width:22%;">Sync Mode / Frequency</th><th style="width:34%;">Data Objects &amp; Business Logic</th></tr>')
+        for irow in integ:
+            out.append(f'<tr><td><strong>{esc(irow.get("interface",""))}</strong></td>'
+                       f'<td>{esc(irow.get("source_system",""))} &#8594; {esc(irow.get("target_system",""))}</td>'
+                       f'<td>{esc(irow.get("sync_mode",""))}</td><td>{esc(irow.get("logic",""))}</td></tr>')
+        out.append('</table>')
+
+    # Sec 4 — Prerequisites
+    out.append('<div style="page-break-inside:avoid;">')
+    out.append('<h2 class="sh">4. Client Pre-requisites &amp; Dependencies</h2>')
+    out.append('<p class="body">To ensure timely project kickoff, the client will provide the following dependencies:</p>')
+    for cat, items in data.get("categorized_prerequisites", {}).items():
+        out.append(f'<div class="cat-h">&#8226; {esc(cat)}</div><ul class="cat-ul">')
+        for it in items:
+            out.append(f'<li>{esc(it)}</li>')
         out.append('</ul>')
+
+    out.append('</div>')
+
+    # Sec 5 — Deliverables
+    out.append('<h2 class="sh">5. Project Deliverables &amp; Acceptance Criteria</h2>')
+    out.append('<p class="body">Wooplix Technologies will deliver the following verified artifacts and milestones:</p>')
+    for cat, items in data.get("categorized_deliverables", {}).items():
+        out.append(f'<div class="cat-h">&#8226; {esc(cat)}</div><ul class="cat-ul">')
+        for it in items:
+            out.append(f'<li>{esc(it)}</li>')
+        out.append('</ul>')
+
+    # Sec 6 — Open Points
+    open_pts = data.get("open_points", []) or []
+    if open_pts:
+        out.append('<h2 class="sh">6. Points to be Finalized During Discovery</h2>')
+        out.append('<p class="body">The following items require collaborative confirmation during initial discovery workshops:</p>')
+        out.append('<div class="ib"><ul>')
+        for pt in open_pts:
+            out.append(f'<li>{esc(pt)}</li>')
+        out.append('</ul></div>')
+
+    # Sec 7 — Timeline
+    tl = data.get("timeline") or {}
+    phases = tl.get("phases", [])
+    if phases:
+        out.append('<div style="page-break-inside:avoid;">')
+        out.append('<h2 class="sh">7. Indicative Implementation Timeline &amp; Milestone Roadmap</h2>')
+        out.append('<p class="body">The implementation follows a staged rollout to ensure minimal operational disruption:</p>')
+        out.append('<table class="dt"><tr><th style="width:26%;">Milestone / Phase</th><th style="width:40%;">Key Activities &amp; Focus</th><th style="width:14%;">Duration</th><th style="width:20%;">Milestone Gate Sign-off</th></tr>')
+        for ph in phases:
+            out.append(f'<tr><td><strong>{esc(ph.get("phase",""))}</strong></td>'
+                       f'<td>{esc(ph.get("key_activities",""))}</td>'
+                       f'<td>{esc(ph.get("duration",""))}</td>'
+                       f'<td>{esc(ph.get("milestone",ph.get("milestone_deliverable","")))}</td></tr>')
+        out.append('</table>')
+        if tl.get("overall"):
+            out.append(f'<p class="body"><strong>Estimated Total Duration:</strong>  {esc(tl["overall"])}</p>')
+
+        if tl.get("note"):
+            out.append(f'<p class="body"><em>{esc(tl["note"])}</em></p>')
+        if tl.get("benchmark_sources"):
+            links = ' · '.join(f'<a href="{esc(s["url"])}">{esc(s["name"])}</a>' for s in tl["benchmark_sources"])
+            out.append(f'<p style="font-size:7pt;color:#64748b;">Estimate references: {links}</p>')
+
+        out.append('</div>')
+
+    # Sec 8 — Commercials
+    com = data.get("commercials")
+    if com and isinstance(com, dict) and com.get("items"):
+        out.append('<h2 class="sh">8. Commercials &amp; Professional Investment</h2>')
+        out.append('<table class="dt"><tr><th style="width:6%;">#</th><th style="width:46%;">Scope / Deliverable Description</th><th style="width:24%;">Basis / Resource Effort</th><th style="width:24%;">Investment</th></tr>')
+        for idx, it in enumerate(com["items"], 1):
+            out.append(f'<tr><td><strong>{idx}</strong></td><td>{esc(it.get("item",""))}</td><td>{esc(it.get("basis",""))}</td><td>{esc(it.get("amount",""))}</td></tr>')
+        out.append('</table>')
+        if com.get("total"):
+            out.append(f'<p class="body"><strong>Total Investment:</strong>  {esc(com["total"])}</p>')
+        if com.get("note"):
+            out.append(f'<p class="body"><em>Commercial Terms: {esc(com["note"])}</em></p>')
+
+
     out.append('</body></html>')
-    return ''.join(out)
+    html = "".join(out)
+    def repeat_header(match):
+        table = match.group(0)
+        return re.sub(r'(<table class="dt"[^>]*>)(<tr>.*?</tr>)(.*?)(</table>)',
+                      r'\1<thead>\2</thead><tbody>\3</tbody>\4', table, count=1, flags=re.DOTALL)
+    return re.sub(r'<table class="dt"[^>]*>.*?</table>', repeat_header, html, flags=re.DOTALL)
 
 
 def build_pdf(data, output):
