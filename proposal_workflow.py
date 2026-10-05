@@ -10,6 +10,49 @@ import re
 import wooplix_agent as agent
 from proposal_scope import requested_products, scope_inventory, product_matches, preserve_source_bullets
 
+
+def _groq_call_with_fallback(**kwargs):
+    """Call the Groq API with automatic key rotation + model fallback on rate-limit (429).
+
+    Rotation order:
+      for each model in [GROQ_MODEL, openai/gpt-oss-120b, openai/gpt-oss-20b, qwen/qwen3.8-27b]:
+          for each api_key in GROQ_API_KEYS:
+              try request → on RateLimitError try next key, then next model
+
+    reasoning_effort is set/cleared automatically per model family.
+    Raises the last RateLimitError if every (key × model) combo is exhausted.
+    """
+    from groq import Groq, RateLimitError
+
+    primary = agent.GROQ_MODEL
+    candidate_models = [primary]
+    for fallback in ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
+        if fallback not in candidate_models:
+            candidate_models.append(fallback)
+
+    api_keys = agent.GROQ_API_KEYS if agent.GROQ_API_KEYS else [agent.GROQ_API_KEY]
+
+    last_exc = None
+    for model_name in candidate_models:
+        call_kwargs = dict(kwargs, model=model_name)
+        # Apply / remove reasoning_effort based on the model family
+        if 'gpt-oss' in model_name:
+            call_kwargs['reasoning_effort'] = 'low'
+        else:
+            call_kwargs.pop('reasoning_effort', None)
+        for api_key in api_keys:
+            groq_client = Groq(api_key=api_key, timeout=90, max_retries=1)
+            try:
+                return groq_client.chat.completions.create(**call_kwargs)
+            except RateLimitError as exc:
+                key_hint = api_key[:12] + '…'
+                print(f"[workflow] RateLimitError key={key_hint} model={model_name} — trying next.", flush=True)
+                last_exc = exc
+                continue
+            except Exception:
+                raise
+    raise last_exc
+
 def market_estimate(product):
     """Return a versioned local planning estimate; never replace saved actuals."""
     import math
@@ -89,12 +132,11 @@ def _prompt_record(record):
 
 
 def analyze(requirement, completed, crm, timing_sources=None):
-    from groq import Groq
-    client = Groq(api_key=agent.GROQ_API_KEY, timeout=90, max_retries=1)
-    model_options = {'reasoning_effort': 'low'} if 'gpt-oss' in agent.GROQ_MODEL else {}
-    extraction = client.chat.completions.create(
-        model=agent.GROQ_MODEL, temperature=0, max_completion_tokens=5000,
-        response_format={'type': 'json_object'}, **model_options,
+    # --- Step 1: extract structured requirement checklist (with key rotation + model fallback) ---
+    extraction = _groq_call_with_fallback(
+        temperature=0,
+        max_completion_tokens=5000,
+        response_format={'type': 'json_object'},
         messages=[{'role': 'system', 'content': REQUIREMENT_PROMPT},
                   {'role': 'user', 'content': requirement}])
     inventory = agent.parse_json_safely(extraction.choices[0].message.content)
@@ -132,9 +174,10 @@ def analyze(requirement, completed, crm, timing_sources=None):
         'actual_product_time_catalog': product_time_catalog,
         'crm_precedent': (crm or '')[:6000],
     }, ensure_ascii=False)
-    response = client.chat.completions.create(
-        model=agent.GROQ_MODEL, temperature=0.1, max_completion_tokens=5000,
-        **model_options,
+    # --- Step 2: analyze requirement against delivery records (with key rotation + model fallback) ---
+    response = _groq_call_with_fallback(
+        temperature=0.1,
+        max_completion_tokens=5000,
         response_format={'type': 'json_object'},
         messages=[{'role': 'system', 'content': ANALYSIS_PROMPT},
                   {'role': 'user', 'content': payload}])

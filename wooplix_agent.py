@@ -53,6 +53,26 @@ _load_dotenv()
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b"
+
+# Collect all API keys (GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3, …)
+def _collect_groq_keys():
+    keys = []
+    # Primary key first
+    primary = os.environ.get("GROQ_API_KEY", "").strip()
+    if primary:
+        keys.append(primary)
+    # Additional keys: GROQ_API_KEY_2, GROQ_API_KEY_3, …
+    index = 2
+    while True:
+        key = os.environ.get(f"GROQ_API_KEY_{index}", "").strip()
+        if not key:
+            break
+        if key not in keys:
+            keys.append(key)
+        index += 1
+    return keys
+
+GROQ_API_KEYS = _collect_groq_keys()
 ZOHO_CLIENT_ID = os.environ.get("ZOHO_CLIENT_ID", "")
 ZOHO_CLIENT_SECRET = os.environ.get("ZOHO_CLIENT_SECRET", "")
 ZOHO_REFRESH_TOKEN = os.environ.get("ZOHO_REFRESH_TOKEN", "")
@@ -257,12 +277,11 @@ def _looks_like_proposal(d):
 
 
 def draft_proposal(req_text, reference_text, requirement_sections=None):
-    from groq import Groq
+    from groq import Groq, RateLimitError
     user_prompt = "CUSTOMER REQUIREMENT DOCUMENT\nAnalyze the following and return the required JSON.\n\n" + req_text[:320000]
     if reference_text:
         user_prompt = ("INTERNAL REFERENCE EVIDENCE (use only relevant facts; never print this evidence in the client proposal)\n\n"
                        + reference_text + "\n\n" + user_prompt)
-    client = Groq(api_key=GROQ_API_KEY, timeout=90, max_retries=1)
     system_prompt = SYSTEM_PROMPT
     if requirement_sections:
         system_prompt = '''Write a concise, professional implementation proposal for Wooplix Technologies Private Limited.
@@ -290,8 +309,13 @@ Use plain English and return ONLY valid JSON.'''
         if fallback not in candidate_models:
             candidate_models.append(fallback)
 
+    # Build (api_key, model) pairs — exhausting all keys per model before moving on
+    api_keys = GROQ_API_KEYS if GROQ_API_KEYS else [GROQ_API_KEY]
+    combos = [(key, model) for model in candidate_models for key in api_keys]
+
     last = {}
-    for model_name in candidate_models:
+    for api_key, model_name in combos:
+        client = Groq(api_key=api_key, timeout=90, max_retries=1)
         for attempt in range(2):
             try:
                 # Try json_object format first; on retry try without strict json_object format (parse_json_safely extracts it)
@@ -318,6 +342,10 @@ Use plain English and return ONLY valid JSON.'''
                         continue
                     last["status"] = "DRAFT"
                     return last
+            except RateLimitError as exc:
+                key_hint = api_key[:12] + '…'
+                print(f"Groq RateLimitError key={key_hint} model={model_name} — trying next.", flush=True)
+                break  # move to next (key, model) combo
             except Exception as exc:
                 print(f"Groq generation attempt {attempt + 1} with {model_name} failed: {type(exc).__name__}", flush=True)
                 continue
