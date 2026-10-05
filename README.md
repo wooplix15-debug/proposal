@@ -158,7 +158,7 @@ During analysis, the app selects relevant product scope and actual-time records 
 The web workflow is:
 
 1. Upload a customer requirement or paste its text.
-2. Select **Analyze requirements**. The app uses its bundled project data and any optional records you add.
+2. Select **Analyze requirements**. The app compares the request with its saved delivery data.
 3. Review matches and timing. Answer each follow-up, type an **Other** answer, or choose **Leave open for discovery**.
 4. Select **Generate proposal** to download the PDF. Review it before sharing.
 

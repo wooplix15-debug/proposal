@@ -439,12 +439,6 @@
         </div>
       </div>
 
-      <section style="margin-top:20px">
-        <h3>Project times and delivery records</h3>
-        <p style="font-size:12px;margin:8px 0">This app uses delivery data saved with it, so proposal analysis does not depend on the spreadsheet being online. The times are actual working days from completed work. New sheet edits need to be refreshed into the app before they are used.</p>
-        <input id="completedFiles" type="file" accept=".pdf,.doc,.docx,.txt,.md" multiple aria-label="Extra delivery notes">
-        <textarea id="completedText" rows="5" style="width:100%;margin-top:10px;padding:12px" placeholder="Optional: add a delivery detail not already in the sheet" aria-label="Extra delivery notes"></textarea>
-      </section>
       <button class="submit-btn" id="generateBtn" disabled>Analyze requirements →</button>
       <section id="reviewPanel" style="display:none;margin-top:20px" aria-live="polite">
         <h3>Review and answer</h3><div id="reviewContent"></div>
@@ -576,7 +570,7 @@
     const reviewContent = document.querySelector('#reviewContent');
     const finishBtn = document.querySelector('#finishBtn');
     function invalidateReview() { inputRevision++; reviews=[]; reviewPanel.style.display='none'; resultBox.style.display='none'; }
-    for (const id of ['requirementText','filePicker','completedFiles','completedText']) {
+    for (const id of ['requirementText','filePicker']) {
       document.getElementById(id).addEventListener('input', invalidateReview);
       document.getElementById(id).addEventListener('change', invalidateReview);
     }
@@ -600,11 +594,11 @@
           element('p','Delivery lesson: '+c.lesson,box);
         });
         if(review.duration_estimates && review.duration_estimates.length){
-          element('h4','Time based on your project sheet',box);
+          element('h4','Estimated working days',box);
           review.duration_estimates.forEach(t=>element('p',`${t.product}: ${t.days}${t.duration_basis ? '' : ' working days'} (${t.source}). ${t.reason}`,box));
-          element('p','These are actual times from past work and are used as a guide for a new project. If more than one product is included, answer the schedule question to help set the overall timeline.',box);
+          element('p','Based on actual delivery times from past work. The final schedule depends on the confirmed scope.',box);
         } else {
-          element('p','No saved implementation time matched this request. Add a time to the sheet or clarify the scope before setting a timeline.',box);
+          element('p','No matching delivery time is available. Confirm the timeline during discovery.',box);
         }
         review.questions.forEach(q=>{
           const field=element('fieldset','',box); field.style.cssText='margin:12px 0;padding:12px;border:1px solid #dbe2ed;border-radius:8px';
@@ -629,10 +623,6 @@
       if(activeTab==='file' && selectedFile) fd.append('files',selectedFile,selectedFile.name);
       else if(activeTab==='text' && requirementText.value.trim()) fd.append('text',requirementText.value.trim());
       else return;
-      const completed=document.querySelector('#completedFiles').files;
-      if(completed.length>5){statusMsg.textContent='Choose at most five completed project files.';return;}
-      for(const file of completed)fd.append('completed_files',file,file.name);
-      fd.append('completed_text',document.querySelector('#completedText').value);
       busy=true;generateBtn.disabled=true;invalidateReview();
       const analyzedRevision = inputRevision;
       statusMsg.textContent='Comparing requirements with project records…';
