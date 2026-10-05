@@ -3,5 +3,9 @@
 !.env.example
 vendor/
 out/
+output/
+tmp/
+tests/
+C04_course_review_output/
 Wooplix_Proposal.ipynb
 Wooplix_Proposal_Agent_Guide.docx

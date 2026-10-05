@@ -34,6 +34,7 @@
       align-items: center;
       padding: 32px 20px;
     }
+    input, textarea, select { font-family: inherit; font-size: inherit; }
     .container {
       width: 100%;
       max-width: 620px;
@@ -584,18 +585,16 @@
       reviewContent.replaceChildren();
       reviews.forEach((review,index)=>{
         const box=element('section','',reviewContent); box.style.margin='16px 0';
-        element('h4', review.source, box);
+        if (review.source !== 'Pasted requirement') element('h4', review.source, box);
         element('p',review.summary,box);
-        if(!review.comparisons.length) element('p','No supported completed project match was found.',box);
-        review.comparisons.forEach(c=>{
-          element('h4','Compared with '+c.source,box);
-          element('p','Matches: '+c.match,box);
-          element('p','Differences: '+c.difference,box);
-          element('p','Delivery lesson: '+c.lesson,box);
-        });
+        if (review.requirement_sections && review.requirement_sections.length) {
+          element('h4','Scope included',box);
+          const list=element('ul','',box);
+          review.requirement_sections.forEach(s=>element('li',s.product,list));
+        }
         if(review.duration_estimates && review.duration_estimates.length){
           element('h4','Estimated working days',box);
-          review.duration_estimates.forEach(t=>element('p',`${t.product}: ${t.days}${t.duration_basis ? '' : ' working days'} (${t.source}). ${t.reason}`,box));
+          review.duration_estimates.forEach(t=>element('p',`${t.product}: ${t.days}${t.duration_basis ? '' : ' working days'}`,box));
           element('p','Based on actual delivery times from past work. The final schedule depends on the confirmed scope.',box);
         } else {
           element('p','No matching delivery time is available. Confirm the timeline during discovery.',box);
@@ -625,13 +624,13 @@
       else return;
       busy=true;generateBtn.disabled=true;invalidateReview();
       const analyzedRevision = inputRevision;
-      statusMsg.textContent='Comparing requirements with project records…';
+      statusMsg.textContent='Analyzing your requirements…';
       try {
         const res=await fetch('/api/analyze',{method:'POST',body:fd});
         const data=await res.json();if(!res.ok)throw new Error(data.detail||'Analysis failed.');
         if (analyzedRevision !== inputRevision) throw new Error('The input changed during analysis. Analyze the latest input again.');
         reviews=data.reviews;showReviews();
-        statusMsg.textContent=[data.evidence_note,...data.notices].join(' ');
+        statusMsg.textContent='Review the scope and answer the questions below.';
       } catch(err){statusMsg.textContent=err.message;}
       finally{busy=false;updateSubmitState();}
     };
@@ -650,7 +649,7 @@
       }
       const fd=new FormData();fd.append('reviews',JSON.stringify(payload));
       busy=true;finishBtn.disabled=true;generateBtn.disabled=true;
-      statusMsg.textContent='Creating the proposal from your requirements, project records, and answers…';
+      statusMsg.textContent='Creating your proposal…';
       try {
         const res=await fetch(`/api/generate?format=${selectedFormat}`,{method:'POST',body:fd});
         if(!res.ok){const err=await res.json();throw new Error(err.detail||'Generation failed.');}

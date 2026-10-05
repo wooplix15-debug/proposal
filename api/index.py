@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import wooplix_agent as agent
 import proposal_workflow as workflow
 import project_records
+from proposal_scope import finalize_client_content
 
 app = FastAPI(title="Wooplix Proposal Agent")
 MAX_FILES = 5
@@ -136,11 +137,6 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
     if sum(len(x['text']) for x in requirements + completed) > 60000:
         raise HTTPException(413, 'The completed project library is too large. Use fewer or shorter records.')
     crm = ''
-    if agent.ZOHO_REFRESH_TOKEN and agent.ZOHO_CLIENT_ID and agent.ZOHO_CLIENT_SECRET:
-        try:
-            crm = agent.fetch_crm_precedent()[:20000]
-        except Exception:
-            notices.append('Zoho records could not be loaded. Comparison uses your uploaded delivery records only.')
     reviews = []
     try:
         for row in requirements:
@@ -160,10 +156,8 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
     except Exception as exc:
         print(f'Analysis failed: {type(exc).__name__}')
         raise HTTPException(502, 'Could not analyze the requirements. Please try again.') from exc
-    baselines = sum(x['kind'] == 'module_baseline' and x.get('days') is not None for x in project_data)
-    projects = sum(x['kind'] == 'completed_project' for x in project_data)
     return {'reviews': reviews, 'notices': notices,
-            'evidence_note': f'Used bundled project data: {baselines} actual product delivery-time record(s) and {projects} completed project record(s).'}
+            'evidence_note': ''}
 
 
 @app.post("/api/generate")
@@ -200,10 +194,13 @@ async def generate(request: Request, reviews: str = Form(...)):
             item_count = len(prepared)
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
                 for index, (requirement, source_name, reference_text, analysis, answers) in enumerate(prepared, start=1):
-                    proposal = agent.draft_proposal(requirement, reference_text)
+                    proposal = agent.draft_proposal(requirement, reference_text,
+                                                    analysis.get('requirement_sections', []))
                     if not agent._looks_like_proposal(proposal):
                         raise HTTPException(status_code=502, detail=f"Could not create a proposal from {source_name}. Please try again.")
                     proposal = workflow.apply_actual_delivery_timeline(proposal, analysis, answers)
+                    proposal = workflow.apply_requested_cost_breakdown(proposal, analysis)
+                    proposal = finalize_client_content(proposal, analysis, answers, requirement)
                     client_name = (proposal.get("client") or {}).get("company_name") or Path(source_name).stem
                     stem = _safe_name(client_name)
                     if stem in names:
@@ -241,6 +238,9 @@ async def generate(request: Request, reviews: str = Form(...)):
     except Exception as exc:
         print(f"Proposal generation failed: {type(exc).__name__}: {str(exc)[:300]}")
         raise HTTPException(status_code=502, detail="Proposal generation failed. Please try again.") from exc
+
+    if item_count == 1 and requested_format == 'pdf' and not single_pdf_bytes:
+        raise HTTPException(502, 'Could not render the PDF. Please try again or select Word.')
 
     # Direct PDF response when generating a single proposal (default format)
     if item_count == 1 and requested_format in ("pdf", "auto") and single_pdf_bytes:

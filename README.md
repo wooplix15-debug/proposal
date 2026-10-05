@@ -4,7 +4,7 @@ Wooplix Technologies Private Limited — Together, We Achieve More
 
 A self-contained system that turns a customer requirement into a review-ready
 Wooplix proposal in your house style (scope-of-work), as branded **DOCX + PDF**,
-learning from your past deals in Zoho CRM when available.
+using your saved actual delivery-time data to inform the timeline.
 
 ## What's in this folder
 
@@ -28,9 +28,11 @@ Customer requirement (TXT / MD / DOCX / PDF, or pasted text)
         |
    Text extraction
         |
-   Past deals from Zoho CRM  (precedent — optional)
+   Full requirement checklist + saved delivery-time data
         |
-   Groq LLM  (Proposal Solution Architect, house-style prompt)
+   Questions for missing scope and delivery details
+        |
+   Groq proposal draft + scope coverage check
         |
    Structured proposal JSON
         |
@@ -54,9 +56,7 @@ cp .env.example .env               # then edit .env and add your real keys
 chmod 600 .env                     # keep secrets readable only by you
 ```
 
-Only `GROQ_API_KEY` is required. The Zoho keys are optional: without them the
-agent simply skips CRM precedent and WorkDrive upload and still produces the
-branded DOCX + PDF from the requirement alone.
+Only `GROQ_API_KEY` is required for drafting. The app uses the saved delivery data and does not automatically read CRM deals. Zoho credentials are only needed for an explicitly requested WorkDrive upload.
 
 > The DOCX needs only Python. The PDF needs PHP + dompdf (`composer install`).
 > If PHP or `vendor/` is missing, the agent stops with a clear message.
@@ -88,7 +88,6 @@ Useful options:
 ```bash
 python3 wooplix_agent.py req.docx --out ./out          # where to save
 python3 wooplix_agent.py req.docx --model openai/gpt-oss-120b
-python3 wooplix_agent.py req.docx --skip-crm           # ignore CRM precedent
 python3 wooplix_agent.py req.docx --workdrive          # also upload to WorkDrive
 ```
 
@@ -99,7 +98,7 @@ Each run prints the DOCX, PDF and JSON paths. Open the DOCX/PDF, review, then se
 The browser app accepts up to five requirement files (PDF, DOCX, TXT or MD) and
 returns a ZIP containing a `Wooplix_Results/` folder with DOCX, PDF and JSON for
 each requirement. It calls the existing proposal and PDF rendering functions;
-the DOCX and Dompdf HTML/PDF template remain the same as the command-line app.
+the web and command-line versions use the same concise DOCX and PDF layout.
 
 1. Import this GitHub repository in Vercel and use the repository root as the
    project directory. Vercel detects the static `index.html` and Python API.
@@ -114,8 +113,7 @@ the DOCX and Dompdf HTML/PDF template remain the same as the command-line app.
 The API limits each file to 4 MB, the total batch to 15 MB, and each batch to
 five files. Uploaded documents are kept in temporary function storage and the
 generated ZIP is returned directly; this app does not persist uploads or results.
-If the Zoho credentials are configured as Vercel environment variables, the
-hosted flow also uses CRM precedent, as the existing command-line generator does.
+Both flows use the approved bundled delivery file. Test CRM deals are excluded even when Zoho credentials are present.
 
 Generated examples in `out/`, the local `.env`, Python caches and installed
 Composer dependencies are excluded from the GitHub repository.
@@ -123,9 +121,9 @@ Composer dependencies are excluded from the GitHub repository.
 ## Guardrails (why some numbers stay blank)
 
 - The model never invents pricing, effort hours, dates or commitments.
-- Commercials/Timeline appear only when the requirement or genuine CRM precedent
-  supplies the figures; otherwise those sections are omitted — matching how you
-  actually send proposals.
+- Every requested work area stays in scope, including products without saved delivery times. The draft is checked against the full requirement checklist before export.
+- Requested cost categories appear with **To be quoted** where amounts are unavailable. Unknown durations stay **To be confirmed**. A partial estimate is never presented as the total project duration.
+- Historical product timings guide phase estimates. A suite estimate is not added to individual application estimates. Mixed or unknown scheduling keeps the overall timeline open.
 - Every draft is marked `DRAFT`. A human approves before sending.
 - Style is enforced to read human: plain consultant English, imperative scope
   bullets, the client's concrete values carried through verbatim,
@@ -164,4 +162,8 @@ The web workflow is:
 
 This repository is public. Before refreshing the JSON, review it and keep confidential customer details and client names out of the data that gets committed. The refresh script omits the **Project / Client Reference** column.
 
-The API also provides `/api/analyze` and `/api/generate`. The generation endpoint uses the signed review returned by analysis, so answers and source evidence remain attached to the same draft. The CLI and Colab notebook retain their one-step workflow.
+The API also provides `/api/analyze` and `/api/generate`. The generation endpoint uses the signed review returned by analysis, so answers and source evidence remain attached to the same draft. The CLI uses the same checklist, questions, scope check and timing logic. Non-interactive CLI runs leave unanswered details open. The legacy Colab notebook is a separate optional workflow.
+
+## Checks
+
+Run `python3 -m unittest discover -s tests -v`. The regression checks cover full product detection, missing scope, automatic draft correction, source-only requirements, missing times, mixed scheduling and report content. `tests/fixtures/zoho_event_requirement.txt` contains a full multi-product sample for end-to-end review.

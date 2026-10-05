@@ -1,0 +1,84 @@
+Zoho Implementation Business Requirement
+
+1. Our Requirement
+We are using Zoho One and need complete implementation, customization and practical training for our event management business.
+
+2. Zoho CRM
+- Lead automatic creation and BDM assignment
+- Duplicate company management
+- Same company with multiple locations
+- Multiple contacts under one company/location
+- Event-wise and batch-wise data management
+- Existing CRM data cleansing
+- CRM automation and follow-up
+
+3. Zoho Marketing Automation,campaign
+- Email Campaign
+- WhatsApp Campaign
+- SMS Campaign
+- Marketing Journey
+- Audience Segmentation
+- Follow-up Automation
+- Campaign Tracking
+
+4. Zoho Projects - Full Implementation
+- Event-wise project setup
+- Task and milestone management
+- Task assignment
+- Planned vs Actual Hours
+- Billable / Non-billable
+- Timesheet and Work Notes
+- Automation
+- Dashboard and Reports
+- Team training
+
+5. Zoho Creator ,Backstages Full Implementation
+We have not started Zoho Creator yet. We need your recommendation and complete implementation for our event management requirements, including:
+- Custom Applications
+- Event Management
+- Custom Forms
+- Workflows
+- CRM Integration
+- Reports
+- Dashboard
+- User Roles
+
+6. Zoho Analytics - Full Implementation
+- CRM Dashboard
+- BDM Performance
+- Lead Analysis
+- Event-wise Reports
+- Marketing Campaign Reports
+- Zoho Projects Reports
+- Planned vs Actual Hours
+- Team Performance
+- Management Dashboard
+- CRM / Projects / Marketing data integration
+
+7. Training
+We require practical training for:
+- Zoho CRM
+- Zoho Marketing Automation
+- Zoho Projects
+- Zoho Creator
+- Zoho Analytics
+- Automation and Reports
+
+8. Cost Proposal Required
+Please provide separate implementation cost for:
+1. Zoho CRM
+2. Zoho Marketing Automation
+3. Zoho Projects - Full Implementation
+4. Zoho Creator - Full Implementation
+5. Zoho Analytics - Full Implementation
+6. Integration / Customization
+7. WhatsApp & SMS Integration
+8. Data Migration / Cleansing
+9. Training
+10. Post-Implementation Support
+11. Additional License / Add-on Cost
+Please also provide the implementation timeline, scope, training plan and support details.
+
+Main Objective
+We want one integrated system for:
+CRM + Marketing Automation + Projects + Creator + Analytics + Event Management + Email + WhatsApp + SMS
