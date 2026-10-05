@@ -14,6 +14,8 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import wooplix_agent as agent
+import proposal_workflow as workflow
+import project_records
 
 app = FastAPI(title="Wooplix Proposal Agent")
 MAX_FILES = 5
@@ -77,18 +79,98 @@ def health():
     return {"ok": True, "configured": bool(os.environ.get("GROQ_API_KEY")), "max_files": MAX_FILES}
 
 
+async def _extract_uploads(files, work, prefix):
+    rows = []
+    total = 0
+    for index, upload in enumerate(files or [], 1):
+        if not upload.filename:
+            continue
+        name = Path(upload.filename).name
+        suffix = Path(name).suffix.lower()
+        if suffix not in ALLOWED_SUFFIXES:
+            raise HTTPException(400, f"{name}: use TXT, MD, DOC, DOCX, or PDF.")
+        raw = await upload.read(MAX_FILE_BYTES + 1)
+        total += len(raw)
+        if len(raw) > MAX_FILE_BYTES or total > MAX_BATCH_BYTES:
+            raise HTTPException(413, "Each file must be under 4 MB and each group under 15 MB.")
+        path = Path(work) / f"{prefix}-{index}{suffix}"
+        path.write_bytes(raw)
+        try:
+            content = agent.extract_requirement(str(path))
+        except (Exception, SystemExit) as exc:
+            raise HTTPException(400, f"Could not read {name}. Try DOCX or a text-based PDF.") from exc
+        if not content.strip():
+            raise HTTPException(400, f"{name}: no readable text found. Scanned PDFs need text extraction first.")
+        rows.append({'source': name, 'text': content})
+    return rows
+
+
+@app.post("/api/analyze")
+@app.post("/analyze")
+async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
+                              text: Optional[str] = Form(None),
+                              completed_files: Optional[List[UploadFile]] = File(None),
+                              completed_text: Optional[str] = Form(None)):
+    if not agent.GROQ_API_KEY:
+        raise HTTPException(503, "Set GROQ_API_KEY before analyzing requirements.")
+    if len(files or []) > MAX_FILES or len(completed_files or []) > MAX_FILES:
+        raise HTTPException(400, "Upload at most five requirements and five completed project records.")
+    with tempfile.TemporaryDirectory(prefix='wooplix-analysis-') as work:
+        requirements = await _extract_uploads(files, work, 'requirement')
+        completed = await _extract_uploads(completed_files, work, 'completed')
+    if text and text.strip():
+        requirements.append({'source': 'Pasted requirement', 'text': text.strip()})
+    if completed_text and completed_text.strip():
+        completed.append({'source': 'Pasted completed project record', 'text': completed_text.strip()})
+    if not requirements or len(requirements) > MAX_FILES:
+        raise HTTPException(400, "Supply between one and five requirements.")
+    # Explicit limit: do not silently drop evidence from the comparison.
+    if sum(len(x['text']) for x in requirements + completed) > 60000:
+        raise HTTPException(413, "Please shorten the requirement and delivery records to 60,000 characters in total.")
+    live_records, notices = project_records.load_live_sheet_records()
+    completed = live_records + completed
+    if sum(len(x['text']) for x in requirements + completed) > 60000:
+        raise HTTPException(413, 'The completed project library is too large. Use fewer or shorter records.')
+    crm = ''
+    if agent.ZOHO_REFRESH_TOKEN and agent.ZOHO_CLIENT_ID and agent.ZOHO_CLIENT_SECRET:
+        try:
+            crm = agent.fetch_crm_precedent()[:20000]
+        except Exception:
+            notices.append('Zoho records could not be loaded. Comparison uses your uploaded delivery records only.')
+    reviews = []
+    try:
+        for row in requirements:
+            analysis = workflow.analyze(row['text'], completed, crm, live_records)
+            context = {'requirement': row['text'], 'source': row['source'],
+                       'completed': completed, 'timing_sources': live_records,
+                       'crm': crm, 'analysis': analysis}
+            reviews.append(dict(analysis, source=row['source'], review_token=workflow.seal(context)))
+    except Exception as exc:
+        print(f'Analysis failed: {type(exc).__name__}')
+        raise HTTPException(502, 'Could not analyze the requirements. Please try again.') from exc
+    baselines = sum(x['kind'] == 'module_baseline' for x in live_records)
+    projects = sum(x['kind'] == 'completed_project' for x in live_records)
+    return {'reviews': reviews, 'notices': notices,
+            'evidence_note': f'Read the Google Sheet now: {baselines} Zoho time baseline(s) and {projects} completed project record(s) with actual days.'}
+
+
 @app.post("/api/generate")
 @app.post("/generate")
 @app.post("/api/index.py")
-async def generate(request: Request, files: Optional[List[UploadFile]] = File(None), text: Optional[str] = Form(None)):
-    if not os.environ.get("GROQ_API_KEY"):
-        raise HTTPException(status_code=503, detail="The proposal service is not configured yet. Add GROQ_API_KEY in Vercel project settings.")
-    has_files = files and any(f.filename for f in files)
-    has_text = text and text.strip()
-    if not has_files and not has_text:
-        raise HTTPException(status_code=400, detail="Upload a requirement file or paste requirement text.")
-    if has_files and len(files) > MAX_FILES:
-        raise HTTPException(status_code=400, detail=f"Choose between 1 and {MAX_FILES} requirement files.")
+async def generate(request: Request, reviews: str = Form(...)):
+    if not agent.GROQ_API_KEY:
+        raise HTTPException(503, "Set GROQ_API_KEY before generating proposals.")
+    try:
+        reviewed = json.loads(reviews)
+        if not isinstance(reviewed, list) or not 1 <= len(reviewed) <= MAX_FILES:
+            raise ValueError('Supply one to five analyzed requirements.')
+        prepared = []
+        for row in reviewed:
+            context = workflow.unseal(row['review_token'])
+            req, reference = workflow.prepare_draft(context, row.get('answers', {}))
+            prepared.append((req, context['source'], reference))
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     host = request.headers.get("x-forwarded-host") or request.headers.get("host")
     requested_format = (request.query_params.get("format") or "auto").lower()
@@ -102,43 +184,9 @@ async def generate(request: Request, files: Optional[List[UploadFile]] = File(No
 
     try:
         with tempfile.TemporaryDirectory(prefix="wooplix-") as work:
-            # Build list of (requirement_text, source_name) pairs
-            requirements = []
-
-            # Process uploaded files
-            if has_files:
-                for index, upload in enumerate(files, start=1):
-                    filename = Path(upload.filename or "requirement.txt").name
-                    suffix = Path(filename).suffix.lower()
-                    if suffix not in ALLOWED_SUFFIXES:
-                        raise HTTPException(status_code=400, detail=f"{filename}: use TXT, MD, DOC, DOCX, or PDF files.")
-                    raw = await upload.read(MAX_FILE_BYTES + 1)
-                    total += len(raw)
-                    if len(raw) > MAX_FILE_BYTES or total > MAX_BATCH_BYTES:
-                        raise HTTPException(status_code=413, detail="Each file must be under 4 MB and the whole folder under 15 MB.")
-                    input_path = Path(work) / f"input-{index}{suffix}"
-                    input_path.write_bytes(raw)
-                    requirement = agent.extract_requirement(str(input_path))
-                    if not requirement.strip():
-                        raise HTTPException(status_code=400, detail=f"{filename}: no readable text was found.")
-                    requirements.append((requirement, filename))
-
-            # Process pasted text
-            if has_text:
-                requirements.append((text.strip(), "Pasted_Requirement"))
-
-            if not requirements:
-                raise HTTPException(status_code=400, detail="No requirement content found.")
-
-            item_count = len(requirements)
+            item_count = len(prepared)
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
-                for index, (requirement, source_name) in enumerate(requirements, start=1):
-                    reference_text = ""
-                    if agent.ZOHO_REFRESH_TOKEN and agent.ZOHO_CLIENT_ID and agent.ZOHO_CLIENT_SECRET:
-                        try:
-                            reference_text = agent.fetch_crm_precedent()
-                        except Exception as exc:
-                            print(f"Zoho precedent unavailable; continuing without it: {type(exc).__name__}")
+                for index, (requirement, source_name, reference_text) in enumerate(prepared, start=1):
                     proposal = agent.draft_proposal(requirement, reference_text)
                     if not agent._looks_like_proposal(proposal):
                         raise HTTPException(status_code=502, detail=f"Could not create a proposal from {source_name}. Please try again.")
@@ -178,7 +226,7 @@ async def generate(request: Request, files: Optional[List[UploadFile]] = File(No
         raise
     except Exception as exc:
         print(f"Proposal generation failed: {type(exc).__name__}: {str(exc)[:300]}")
-        raise HTTPException(status_code=502, detail=f"Proposal generation failed ({type(exc).__name__}: {str(exc)[:150]}).") from exc
+        raise HTTPException(status_code=502, detail="Proposal generation failed. Please try again.") from exc
 
     # Direct PDF response when generating a single proposal (default format)
     if item_count == 1 and requested_format in ("pdf", "auto") and single_pdf_bytes:

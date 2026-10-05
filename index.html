@@ -439,7 +439,17 @@
         </div>
       </div>
 
-      <button class="submit-btn" id="generateBtn" disabled>Generate Proposal →</button>
+      <section style="margin-top:20px">
+        <h3>Project times and delivery records</h3>
+        <p style="font-size:12px;margin:8px 0">Your Zoho Project Delivery Data sheet is checked each time. Fill in Standard Days for product estimates and Actual Working Days for completed projects. You can add extra project notes below.</p>
+        <input id="completedFiles" type="file" accept=".pdf,.doc,.docx,.txt,.md" multiple aria-label="Extra delivery notes">
+        <textarea id="completedText" rows="5" style="width:100%;margin-top:10px;padding:12px" placeholder="Optional: add a delivery detail not already in the sheet" aria-label="Extra delivery notes"></textarea>
+      </section>
+      <button class="submit-btn" id="generateBtn" disabled>Analyze requirements →</button>
+      <section id="reviewPanel" style="display:none;margin-top:20px" aria-live="polite">
+        <h3>Review and answer</h3><div id="reviewContent"></div>
+        <button class="submit-btn" id="finishBtn">Generate proposal with these answers →</button>
+      </section>
       <div class="status-msg" id="statusMsg" role="status" aria-live="polite"></div>
 
       <div class="result-box" id="resultBox" style="display:none;">
@@ -478,6 +488,7 @@
 
     // Tab switching
     tabFile.onclick = () => {
+      invalidateReview();
       activeTab = 'file';
       tabFile.classList.add('active');
       tabText.classList.remove('active');
@@ -486,6 +497,7 @@
       updateSubmitState();
     };
     tabText.onclick = () => {
+      invalidateReview();
       activeTab = 'text';
       tabText.classList.add('active');
       tabFile.classList.remove('active');
@@ -498,9 +510,9 @@
 
     function updateSubmitState() {
       if (activeTab === 'file') {
-        generateBtn.disabled = !selectedFile;
+        generateBtn.disabled = busy || !selectedFile;
       } else {
-        generateBtn.disabled = !requirementText.value.trim();
+        generateBtn.disabled = busy || !requirementText.value.trim();
       }
     }
 
@@ -539,13 +551,15 @@
       item.innerHTML = `
         <div class="file-ext">${ext.toUpperCase()}</div>
         <div class="file-details">
-          <strong>${selectedFile.name}</strong>
+          <strong></strong>
           <span>${(selectedFile.size / 1024).toFixed(0)} KB</span>
         </div>
         <button class="remove-btn" title="Remove file" aria-label="Remove file">×</button>
       `;
+      item.querySelector('strong').textContent = selectedFile.name;
       item.querySelector('.remove-btn').onclick = (e) => {
         e.stopPropagation();
+        invalidateReview();
         selectedFile = null;
         filePicker.value = '';
         renderFile();
@@ -554,55 +568,112 @@
       updateSubmitState();
     }
 
+    let inputRevision = 0;
+    let reviews = [];
+    let busy = false;
+    let resultUrl = null;
+    const reviewPanel = document.querySelector('#reviewPanel');
+    const reviewContent = document.querySelector('#reviewContent');
+    const finishBtn = document.querySelector('#finishBtn');
+    function invalidateReview() { inputRevision++; reviews=[]; reviewPanel.style.display='none'; resultBox.style.display='none'; }
+    for (const id of ['requirementText','filePicker','completedFiles','completedText']) {
+      document.getElementById(id).addEventListener('input', invalidateReview);
+      document.getElementById(id).addEventListener('change', invalidateReview);
+    }
+    const previousSetFile = setFile;
+    setFile = f => { invalidateReview(); previousSetFile(f); };
+    function element(tag, text, parent) {
+      const node=document.createElement(tag); node.textContent=text;
+      if(parent) parent.appendChild(node); return node;
+    }
+    function showReviews() {
+      reviewContent.replaceChildren();
+      reviews.forEach((review,index)=>{
+        const box=element('section','',reviewContent); box.style.margin='16px 0';
+        element('h4', review.source, box);
+        element('p',review.summary,box);
+        if(!review.comparisons.length) element('p','No supported completed project match was found.',box);
+        review.comparisons.forEach(c=>{
+          element('h4','Compared with '+c.source,box);
+          element('p','Matches: '+c.match,box);
+          element('p','Differences: '+c.difference,box);
+          element('p','Delivery lesson: '+c.lesson,box);
+        });
+        if(review.duration_estimates && review.duration_estimates.length){
+          element('h4','Time based on your project sheet',box);
+          review.duration_estimates.forEach(t=>element('p',`${t.product}: ${t.days} working days (${t.source}). ${t.reason}`,box));
+          element('p','These are estimates from your saved times. If more than one product is included, answer the schedule question to help set the overall timeline.',box);
+        } else {
+          element('p','No saved implementation time matched this request. Add a time to the sheet or clarify the scope before setting a timeline.',box);
+        }
+        review.questions.forEach(q=>{
+          const field=element('fieldset','',box); field.style.cssText='margin:12px 0;padding:12px;border:1px solid #dbe2ed;border-radius:8px';
+          element('legend',q.question,field);element('p',q.reason,field);
+          const select=element('select','',field);select.style.cssText='width:100%;padding:8px;margin-top:8px';
+          select.id=`answer-${index}-${q.id}`;select.setAttribute('aria-label',q.question);
+          element('option','Choose an answer',select).value='';
+          q.options.forEach(o=>{element('option',o,select).value=o;});
+          element('option','Other — enter your answer',select).value='__other__';
+          element('option','Leave open for discovery',select).value='Leave open for discovery';
+          const other=element('textarea','',field);other.id=`other-${index}-${q.id}`;
+          other.placeholder='Write your answer';other.maxLength=4000;other.hidden=true;
+          other.setAttribute('aria-label','Other answer: '+q.question);other.style.cssText='width:100%;padding:8px;margin-top:8px';
+          select.onchange=()=>{other.hidden=select.value!=='__other__';};
+        });
+      });
+      reviewPanel.style.display='block';
+    }
     generateBtn.onclick = async () => {
-      const fd = new FormData();
-      if (activeTab === 'file' && selectedFile) {
-        fd.append('files', selectedFile, selectedFile.name);
-      } else if (activeTab === 'text' && requirementText.value.trim()) {
-        fd.append('text', requirementText.value.trim());
-      } else {
-        return;
-      }
-
-      generateBtn.disabled = true;
-      generateBtn.textContent = 'Drafting proposal…';
-      statusMsg.textContent = 'Analyzing requirement and generating branded proposal…';
-      resultBox.style.display = 'none';
-
+      if(busy) return;
+      const fd=new FormData();
+      if(activeTab==='file' && selectedFile) fd.append('files',selectedFile,selectedFile.name);
+      else if(activeTab==='text' && requirementText.value.trim()) fd.append('text',requirementText.value.trim());
+      else return;
+      const completed=document.querySelector('#completedFiles').files;
+      if(completed.length>5){statusMsg.textContent='Choose at most five completed project files.';return;}
+      for(const file of completed)fd.append('completed_files',file,file.name);
+      fd.append('completed_text',document.querySelector('#completedText').value);
+      busy=true;generateBtn.disabled=true;invalidateReview();
+      const analyzedRevision = inputRevision;
+      statusMsg.textContent='Comparing requirements with project records…';
       try {
-        const res = await fetch(`/api/generate?format=${selectedFormat}`, { method: 'POST', body: fd });
-        if (!res.ok) {
-          const info = await res.json().catch(() => ({}));
-          throw new Error(info.detail || 'Generation failed. Please try again.');
+        const res=await fetch('/api/analyze',{method:'POST',body:fd});
+        const data=await res.json();if(!res.ok)throw new Error(data.detail||'Analysis failed.');
+        if (analyzedRevision !== inputRevision) throw new Error('The input changed during analysis. Analyze the latest input again.');
+        reviews=data.reviews;showReviews();
+        statusMsg.textContent=[data.evidence_note,...data.notices].join(' ');
+      } catch(err){statusMsg.textContent=err.message;}
+      finally{busy=false;updateSubmitState();}
+    };
+    finishBtn.onclick=async()=>{
+      if(busy)return;
+      const payload=[];
+      for(let i=0;i<reviews.length;i++){
+        const answers={};
+        for(const q of reviews[i].questions){
+          const choice=document.getElementById(`answer-${i}-${q.id}`).value;
+          const answer=choice==='__other__'?document.getElementById(`other-${i}-${q.id}`).value.trim():choice;
+          if(!answer){statusMsg.textContent='Answer each question or choose Leave open.';return;}
+          answers[q.id]=answer;
         }
-
-        let filename = res.headers.get('x-proposal-filename');
-        if (!filename) {
-          const disp = res.headers.get('content-disposition') || '';
-          const match = disp.match(/filename="?([^";]+)"?/);
-          if (match) filename = match[1];
-        }
-        if (!filename) filename = selectedFormat === 'docx' ? 'Wooplix_Proposal.docx' : (selectedFormat === 'zip' ? 'Wooplix_Results.zip' : 'Wooplix_Proposal.pdf');
-
-        const clientName = res.headers.get('x-proposal-client') || 'Client';
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = filename;
-        document.body.append(a); a.click(); a.remove();
-
-        resultBox.style.display = 'block';
-        resultClient.textContent = clientName;
-        resultFile.textContent = `Downloaded: ${filename}`;
-        downloadAgainBtn.href = url;
-        downloadAgainBtn.download = filename;
-        statusMsg.textContent = `✓ Done! Proposal downloaded to your computer.`;
-      } catch (err) {
-        statusMsg.textContent = err.message;
-      } finally {
-        generateBtn.textContent = 'Generate Proposal →';
-        updateSubmitState();
+        payload.push({review_token:reviews[i].review_token,answers});
       }
+      const fd=new FormData();fd.append('reviews',JSON.stringify(payload));
+      busy=true;finishBtn.disabled=true;generateBtn.disabled=true;
+      statusMsg.textContent='Creating the proposal from your requirements, project records, and answers…';
+      try {
+        const res=await fetch(`/api/generate?format=${selectedFormat}`,{method:'POST',body:fd});
+        if(!res.ok){const err=await res.json();throw new Error(err.detail||'Generation failed.');}
+        const filename=res.headers.get('x-proposal-filename')||'Wooplix_Results.zip';
+        const client=res.headers.get('x-proposal-client')||'Client';
+        const blob=await res.blob();if(resultUrl)URL.revokeObjectURL(resultUrl);
+        resultUrl=URL.createObjectURL(blob);
+        const a=element('a','',document.body);a.href=resultUrl;a.download=filename;a.click();a.remove();
+        resultClient.textContent=client;resultFile.textContent=filename;
+        downloadAgainBtn.href=resultUrl;downloadAgainBtn.download=filename;resultBox.style.display='block';
+        statusMsg.textContent='Proposal downloaded. Review it before sharing.';
+      }catch(err){statusMsg.textContent=err.message;}
+      finally{busy=false;finishBtn.disabled=false;updateSubmitState();}
     };
   </script>
 </body>

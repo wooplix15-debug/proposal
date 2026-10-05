@@ -146,3 +146,26 @@ Composer dependencies are excluded from the GitHub repository.
 - Rotate any credential that was ever pasted into chat, code, or a shared file.
 - Keep secrets only in `.env` (`chmod 600`), environment variables, or Colab Secrets.
 - Never commit `.env`. Only `.env.example` (no real values) belongs in version control.
+
+## Use project times in proposals
+
+The live app checks the Zoho Project Delivery Data Google Sheet each time you analyze a request:
+
+[Open the Zoho Project Delivery Data sheet](https://docs.google.com/spreadsheets/d/1GnpSpbL_B1s6wDOO5NQVml75Fiz56l4bPF1s9F7brEw/edit)
+
+Fill in **Zoho Product Master → Standard Days** with your usual working days for a product. Keep **Typical Proposal Scope**, **Complexity Level**, **Typical User Range**, and **Data Migration** current so the agent can compare what the customer asked for with the work your time covers. Add more detail to **Past Delivered Projects**: products, delivered scope, complexity, migration/integration, and **Actual Working Days**.
+
+When a new requirement arrives, the app reads both tabs, compares it with saved times and delivered projects, shows the matched time estimates, then asks follow-up questions about missing scope. The user can pick a suggested answer, write their own answer, or leave the point open. The app uses those answers and the matched sheet evidence to create the PDF in the existing proposal design. Times in the sheet are estimates, not delivery promises. The app does not add up module days into a total schedule when it cannot tell which work overlaps.
+
+Sheet access needs to remain available to the app. The current sheet can be read as a CSV export without signing in. If its sharing settings change, the app will show a read error and will have no fresh sheet times. Sheet edits are read on the next analysis; they do not require a GitHub commit or Vercel redeployment.
+
+The web workflow is:
+
+1. Upload a customer requirement or paste its text.
+2. Select **Analyze requirements**. The app checks the Google Sheet and any optional records you add.
+3. Review matches and timing. Answer each follow-up, type an **Other** answer, or choose **Leave open for discovery**.
+4. Select **Generate proposal** to download the PDF. Review it before sharing.
+
+The sheet contains project and customer data. Only include information you are comfortable sharing with anyone who can access the sheet. Do not put credentials in it.
+
+The API also provides `/api/analyze` and `/api/generate`. The generation endpoint uses the signed review returned by analysis, so answers and source evidence remain attached to the same draft. The CLI and Colab notebook retain their one-step workflow.

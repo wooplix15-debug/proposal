@@ -269,6 +269,7 @@ def draft_proposal(req_text, reference_text):
                 raw_text = resp.choices[0].message.content or ""
                 last = parse_json_safely(raw_text)
                 if _looks_like_proposal(last):
+                    last["status"] = "DRAFT"
                     return last
             except Exception as exc:
                 print(f"Groq generation attempt {attempt + 1} with {model_name} failed: {exc}")
@@ -416,15 +417,8 @@ def normalize_proposal(data):
     tl = out.get("timeline") or {}
     phases = tl.get("phases", [])
     if not phases:
-        tl["phases"] = [
-            {"phase": "Phase 1: Discovery & Requirements Sign-off",    "key_activities": "Process walkthroughs, field mappings, workflow charts, master data templates, and architecture validation.", "duration": "1 – 2 Weeks",  "milestone": "Discovery Sign-off & SOW Confirmation"},
-            {"phase": "Phase 2: Core System Configuration & Setup",    "key_activities": "Module configuration, role hierarchy, custom fields, pipelines, notification workflows, and approval rules.", "duration": "2 – 3 Weeks",  "milestone": "Baseline Configuration Walkthrough"},
-            {"phase": "Phase 3: Integration & Data Migration",         "key_activities": "Third-party connector setup, API testing, historical master data cleansing and initial data load.",            "duration": "2 Weeks",      "milestone": "Integrated Test Environment Ready"},
-            {"phase": "Phase 4: UAT & Training",                       "key_activities": "End-to-end scenario validation, defect remediation, admin and user training sessions.",                        "duration": "1 – 2 Weeks",  "milestone": "Formal UAT Sign-off"},
-            {"phase": "Phase 5: Go-Live & Post-Launch Support",        "key_activities": "Production cutover, final delta migration, live user guidance, and stabilization support.",                    "duration": "2 Weeks",      "milestone": "Production Deployment & Project Handover"},
-        ]
-        if not tl.get("overall"):
-            tl["overall"] = "6 – 10 Weeks (subject to client feedback turnaround and master data readiness)"
+        tl['phases'] = []
+        tl.setdefault('overall', 'To be confirmed during discovery')
     else:
         tl["phases"] = [
             {
@@ -449,7 +443,7 @@ def _get_cover_specs(data):
         p.get("product", "") for p in data.get("scope", []) if p.get("product")
     ) or "Zoho Cloud Suite"
 
-    timeline = (data.get("timeline") or {}).get("overall") or "6 – 8 Weeks"
+    timeline = (data.get("timeline") or {}).get("overall") or "To be confirmed during discovery"
 
     overview_map = {str(row.get("parameter", "")).strip().lower(): str(row.get("details", "")).strip() for row in data.get("project_overview_table", [])}
 
