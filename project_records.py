@@ -1,25 +1,22 @@
-"""Read actual product delivery times and completed-project records from Google Sheets."""
-import csv
-import io
+"""Load actual delivery history bundled with the proposal app."""
+import copy
 import json
-import os
 from pathlib import Path
 import re
-import requests
 
-SHEET_ID = os.environ.get('ZOHO_PROJECT_SHEET_ID', '1GnpSpbL_B1s6wDOO5NQVml75Fiz56l4bPF1s9F7brEw')
-PRODUCTS_GID = os.environ.get('ZOHO_PRODUCTS_GID', '1746892041')
-PROJECTS_GID = os.environ.get('ZOHO_PROJECTS_GID', '189646703')
+DATA_FILE = Path(__file__).resolve().with_name('project_delivery_data.json')
+_RECORD_CACHE = None
 
 
 def _parse_days(value):
-    """Keep sheet durations readable, including ranges and per-unit estimates."""
-    value = (value or '').strip()
-    if not value:
+    """Read single days, ranges, bare numeric day values, and per-unit times."""
+    if value is None:
         return None
-    cleaned = value.replace('–', '-').replace('—', '-').replace('−', '-')
+    cleaned = str(value).strip().replace('–', '-').replace('—', '-').replace('−', '-')
+    if not cleaned:
+        return None
     match = re.fullmatch(
-        r'\s*(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(?:working\s*)?days?\s*',
+        r'(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(?:working\s*)?days?',
         cleaned, flags=re.IGNORECASE)
     if match:
         low, high = float(match.group(1)), float(match.group(2))
@@ -29,94 +26,83 @@ def _parse_days(value):
                 'days_min': low, 'days_max': high}
 
     match = re.fullmatch(
-        r'\s*(\d+(?:\.\d+)?)\s*(?:working\s*)?days?\s*(?:per|/)\s*(.+?)\s*',
+        r'(\d+(?:\.\d+)?)\s*(?:working\s*)?days?\s*(?:per|/)\s*(.+)',
         cleaned, flags=re.IGNORECASE)
     if match:
-        value = float(match.group(1))
-        if value <= 0:
+        number = float(match.group(1))
+        if number <= 0:
             return None
-        return {'days': f'{match.group(1)} day per {match.group(2).strip()}',
-                'days_min': None, 'days_max': None, 'duration_basis': f'per {match.group(2).strip()}'}
+        unit = match.group(2).strip()
+        return {'days': f'{match.group(1)} day per {unit}', 'days_min': None,
+                'days_max': None, 'duration_basis': f'per {unit}'}
 
-    match = re.fullmatch(r'\s*(\d+(?:\.\d+)?)\s*(?:working\s*)?days?\s*',
-                         cleaned, flags=re.IGNORECASE)
+    match = re.fullmatch(r'(\d+(?:\.\d+)?)\s*(?:(?:working\s*)?days?)?', cleaned,
+                         flags=re.IGNORECASE)
     if match:
-        value = float(match.group(1))
-        if value <= 0:
+        number = float(match.group(1))
+        if number <= 0:
             return None
-        return {'days': value, 'days_min': value, 'days_max': value}
-
-    # Some sheet cells store actual working days as a bare number (for example `1`).
-    match = re.fullmatch(r'\s*(\d+(?:\.\d+)?)\s*', cleaned)
-    if match:
-        value = float(match.group(1))
-        if value <= 0:
-            return None
-        return {'days': value, 'days_min': value, 'days_max': value}
+        return {'days': number, 'days_min': number, 'days_max': number}
     return None
 
 
-def _sheet_rows(gid):
-    url = f'https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}'
-    response = requests.get(url, headers={'User-Agent': 'WooplixProposalAgent/1.0'}, timeout=12)
-    response.raise_for_status()
-    content = response.content[:2_000_000].decode('utf-8-sig')
-    reader = csv.DictReader(io.StringIO(content))
-    if not reader.fieldnames:
-        raise ValueError('The sheet is empty or not publicly readable.')
-    return list(reader)
+def _make_product_record(row):
+    duration = _parse_days(row.get('actual_working_days'))
+    record = {
+        'record_id': row['record_id'],
+        'kind': 'module_baseline',
+        'duration_type': 'actual_product_delivery_time',
+        'product': row.get('product', ''),
+        'scope': row.get('scope', ''),
+        'category': row.get('category', ''),
+        'complexity': row.get('complexity', ''),
+        'users': row.get('typical_users', ''),
+        'migration': row.get('data_migration', ''),
+        'notes': row.get('notes', ''),
+        'source': 'Bundled project delivery data · Product actual times',
+    }
+    if duration:
+        record.update(duration)
+    elif row.get('actual_working_days'):
+        raise ValueError(f"Unrecognized actual time for {row.get('product', 'a product')}.")
+    record['text'] = json.dumps(record, ensure_ascii=False)
+    return record
 
 
-def load_live_sheet_records():
-    """Read the user's public Google Sheet on every analysis; blank times stay unknown."""
-    records, notices = [], []
-    try:
-        rows = _sheet_rows(PRODUCTS_GID)
-        for number, row in enumerate(rows, 2):
-            product = (row.get('Zoho Product') or '').strip()
-            scope = (row.get('Typical Proposal Scope') or '').strip()
-            duration = _parse_days(row.get('Standard Days'))
-            if not product:
-                continue
-            record = {'record_id': f'product:{number}', 'kind': 'module_baseline',
-                      'duration_type': 'actual_product_delivery_time', 'product': product,
-                      'scope': scope, 'category': (row.get('Category') or '').strip(),
-                      'complexity': (row.get('Complexity Level') or '').strip(),
-                      'users': (row.get('Typical User Range') or '').strip(),
-                      'migration': (row.get('Data Migration') or '').strip(),
-                      'notes': (row.get('Notes') or '').strip()}
-            if duration:
-                record.update(duration)
-            elif (row.get('Standard Days') or '').strip():
-                notices.append(f'Row {number} in Zoho Product Master has an unrecognized Standard Days value; its product scope is still available for comparison.')
-            record['source'] = 'Google Sheet · Zoho Product Master'
-            record['text'] = json.dumps(record, ensure_ascii=False)
-            records.append(record)
-    except Exception as exc:
-        notices.append(f'Could not read Zoho Product Master live: {type(exc).__name__}.')
-    try:
-        rows = _sheet_rows(PROJECTS_GID)
-        for number, row in enumerate(rows, 2):
-            duration = _parse_days(row.get('Actual Working Days'))
-            scope = (row.get('Main Scope Delivered') or '').strip()
-            products = (row.get('Zoho Products Used') or '').strip()
-            if not (scope or products):
-                continue
-            record = {'record_id': f'project:{number}', 'kind': 'completed_project',
-                      'project': (row.get('Project / Client Reference') or '').strip(),
-                      'products': products, 'scope': scope,
-                      'complexity': (row.get('Complexity') or '').strip(),
-                      'users': (row.get('Users / Departments') or '').strip(),
-                      'migration': (row.get('Migration / Integration') or '').strip(),
-                      'team_size': (row.get('Team Size') or '').strip(),
-                      'notes': (row.get('Important Notes for Future Estimate') or '').strip(),
-                      'source': 'Google Sheet · Past Delivered Projects'}
-            if duration:
-                record.update(duration)
-            elif (row.get('Actual Working Days') or '').strip():
-                notices.append(f'Row {number} in Past Delivered Projects has an unrecognized Actual Working Days value; its delivery details are still available for comparison.')
-            record['text'] = json.dumps(record, ensure_ascii=False)
-            records.append(record)
-    except Exception as exc:
-        notices.append(f'Could not read Past Delivered Projects live: {type(exc).__name__}.')
-    return records, notices
+def _make_project_record(row):
+    duration = _parse_days(row.get('actual_working_days'))
+    record = {
+        'record_id': row['record_id'],
+        'kind': 'completed_project',
+        'products': row.get('products', ''),
+        'scope': row.get('delivered_scope', ''),
+        'complexity': row.get('complexity', ''),
+        'users': row.get('users_or_departments', ''),
+        'migration': row.get('migration_or_integration', ''),
+        'team_size': row.get('team_size', ''),
+        'notes': row.get('future_estimate_notes', ''),
+        'source': 'Bundled project delivery data · Completed projects',
+    }
+    if duration:
+        record.update(duration)
+    elif row.get('actual_working_days'):
+        raise ValueError(f"Unrecognized actual time for completed-project row {row['record_id']}.")
+    record['text'] = json.dumps(record, ensure_ascii=False)
+    return record
+
+
+def load_project_records():
+    """Return the bundled, versioned data file; no runtime Google Sheets request is made."""
+    global _RECORD_CACHE
+    if _RECORD_CACHE is None:
+        try:
+            payload = json.loads(DATA_FILE.read_text(encoding='utf-8'))
+            if payload.get('schema_version') != 1:
+                raise ValueError('Unsupported project data file version.')
+            records = [_make_product_record(row) for row in payload.get('products', [])]
+            records.extend(_make_project_record(row) for row in payload.get('completed_projects', []))
+            _RECORD_CACHE = (records, [])
+        except Exception as exc:
+            _RECORD_CACHE = ([], [f'Could not read bundled project data: {type(exc).__name__}.'])
+    records, notices = _RECORD_CACHE
+    return copy.deepcopy(records), list(notices)

@@ -1,7 +1,8 @@
 {
   "functions": {
     "api/index.py": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "project_delivery_data.json"
     },
     "api/pdf.php": {
       "runtime": "vercel-php@0.9.0"

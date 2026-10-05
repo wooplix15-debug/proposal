@@ -131,8 +131,8 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
     # Explicit limit: do not silently drop evidence from the comparison.
     if sum(len(x['text']) for x in requirements + completed) > 60000:
         raise HTTPException(413, "Please shorten the requirement and delivery records to 60,000 characters in total.")
-    live_records, notices = project_records.load_live_sheet_records()
-    completed = live_records + completed
+    project_data, notices = project_records.load_project_records()
+    completed = project_data + completed
     if sum(len(x['text']) for x in requirements + completed) > 60000:
         raise HTTPException(413, 'The completed project library is too large. Use fewer or shorter records.')
     crm = ''
@@ -144,7 +144,7 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
     reviews = []
     try:
         for row in requirements:
-            analysis = workflow.analyze(row['text'], completed, crm, live_records)
+            analysis = workflow.analyze(row['text'], completed, crm, project_data)
             context_record_ids = set(analysis.get('context_record_ids', []))
             context_record_ids.update(x['record_id'] for x in analysis.get('duration_estimates', [])
                                       if x.get('record_id'))
@@ -152,7 +152,7 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
             relevant_completed = [x for x in completed
                                   if x.get('record_id') in context_record_ids
                                   or (x.get('source') in context_sources and not x.get('record_id'))]
-            relevant_timing = [x for x in live_records if x.get('record_id') in context_record_ids]
+            relevant_timing = [x for x in project_data if x.get('record_id') in context_record_ids]
             context = {'requirement': row['text'], 'source': row['source'],
                        'completed': relevant_completed, 'timing_sources': relevant_timing,
                        'crm': crm, 'analysis': analysis}
@@ -160,10 +160,10 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
     except Exception as exc:
         print(f'Analysis failed: {type(exc).__name__}')
         raise HTTPException(502, 'Could not analyze the requirements. Please try again.') from exc
-    baselines = sum(x['kind'] == 'module_baseline' and x.get('days') is not None for x in live_records)
-    projects = sum(x['kind'] == 'completed_project' for x in live_records)
+    baselines = sum(x['kind'] == 'module_baseline' and x.get('days') is not None for x in project_data)
+    projects = sum(x['kind'] == 'completed_project' for x in project_data)
     return {'reviews': reviews, 'notices': notices,
-            'evidence_note': f'Read the Google Sheet now: {baselines} actual Zoho product delivery-time record(s) and {projects} completed project record(s).'}
+            'evidence_note': f'Used bundled project data: {baselines} actual product delivery-time record(s) and {projects} completed project record(s).'}
 
 
 @app.post("/api/generate")

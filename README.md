@@ -147,25 +147,21 @@ Composer dependencies are excluded from the GitHub repository.
 - Keep secrets only in `.env` (`chmod 600`), environment variables, or Colab Secrets.
 - Never commit `.env`. Only `.env.example` (no real values) belongs in version control.
 
-## Use project times in proposals
+## Project delivery data used in proposals
 
-The live app checks the Zoho Project Delivery Data Google Sheet each time you analyze a request:
+The app uses the versioned file [`project_delivery_data.json`](project_delivery_data.json) in this repository. It does not contact Google Sheets while analyzing a requirement or generating a proposal. The file currently contains 72 product scope rows, including 31 actual product-time entries. The Past Delivered Projects tab has no completed-project records yet. Client/project reference names are not copied into this public file.
 
-[Open the Zoho Project Delivery Data sheet](https://docs.google.com/spreadsheets/d/1GnpSpbL_B1s6wDOO5NQVml75Fiz56l4bPF1s9F7brEw/edit)
+The source sheet is [Zoho Project Delivery Data](https://docs.google.com/spreadsheets/d/1GnpSpbL_B1s6wDOO5NQVml75Fiz56l4bPF1s9F7brEw/edit). To refresh the repository data after changing the sheet, run `python3 refresh_project_delivery_data.py` from the project folder. Review the updated JSON, then commit and push it to GitHub. Vercel will deploy the new bundled data. The refresh script is manual; the live app never runs it.
 
-Fill in **Zoho Product Master → Standard Days** with the actual working days it took to complete that product's work. A number, a range such as `6–8 days`, or a rate such as `1 day per page` is supported. Keep **Typical Proposal Scope**, **Complexity Level**, **Typical User Range**, and **Data Migration** current so the agent can compare the customer request with the completed work behind the time. A product row with no time can still help compare scope, but it cannot support a timeline. Add more detailed project records to **Past Delivered Projects** with products, delivered scope, complexity, migration/integration, and **Actual Working Days**.
-
-When a new requirement arrives, the app reads both tabs, compares it with saved product scopes, actual completion times, and delivered projects, shows matching history, then asks follow-up questions about missing scope. The user can pick a suggested answer, write their own answer, or leave the point open. The app uses those answers and the matched sheet evidence to create the PDF in the existing proposal design. Past times are historical results used to inform a new proposal; they are not promises that future work will take the same time. Ranges stay ranges, and the app does not add module times into a total schedule when it cannot tell which work overlaps.
-
-Sheet access needs to remain available to the app. The current sheet can be read as a CSV export without signing in. If its sharing settings change, the app will show a read error and will have no fresh sheet times. Sheet edits are read on the next analysis; they do not require a GitHub commit or Vercel redeployment.
+During analysis, the app selects relevant product scope and actual-time records from this file, sends those records to Groq, and keeps the selected evidence with the review. Proposal generation uses the same saved review data. Matched actual durations appear in the proposal timeline; ranges remain ranges. These are historical results to inform a new proposal, not promises about future work. If schedule overlap is unknown, the app does not add separate product times into one total.
 
 The web workflow is:
 
 1. Upload a customer requirement or paste its text.
-2. Select **Analyze requirements**. The app checks the Google Sheet and any optional records you add.
+2. Select **Analyze requirements**. The app uses its bundled project data and any optional records you add.
 3. Review matches and timing. Answer each follow-up, type an **Other** answer, or choose **Leave open for discovery**.
 4. Select **Generate proposal** to download the PDF. Review it before sharing.
 
-The sheet contains project and customer data. Only include information you are comfortable sharing with anyone who can access the sheet. Do not put credentials in it.
+This repository is public. Before refreshing the JSON, review it and keep confidential customer details and client names out of the data that gets committed. The refresh script omits the **Project / Client Reference** column.
 
 The API also provides `/api/analyze` and `/api/generate`. The generation endpoint uses the signed review returned by analysis, so answers and source evidence remain attached to the same draft. The CLI and Colab notebook retain their one-step workflow.
