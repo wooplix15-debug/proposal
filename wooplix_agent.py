@@ -376,6 +376,13 @@ def normalize_proposal(data):
         tasks = '; '.join(r.get('scope_description', '') for r in mod.get('configuration_table', []))
         phase.setdefault('key_activities', '; '.join(tasks.replace('• ', '').splitlines()[:2]))
         phase.setdefault('milestone', 'Configured scope reviewed' if phase['phase'].startswith('Zoho ') else 'Completed work reviewed')
+    from proposal_scope import product_matches
+    phases = (out.get('timeline') or {}).get('phases', [])
+    for item in (out.get('commercials') or {}).get('items', []):
+        if not item.get('basis'):
+            phase = next((x for x in phases if product_matches(item.get('item', ''), x['phase'])), None)
+            item['basis'] = phase['duration'] if phase else 'Licence / add-on charges' if 'licen' in item.get('item', '').lower() else 'Agreed scope'
+
     return out
 
 

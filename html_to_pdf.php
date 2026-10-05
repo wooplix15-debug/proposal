@@ -29,7 +29,7 @@ $dompdf->setPaper('A4', 'portrait');
 $dompdf->render();
 $canvas = $dompdf->getCanvas();
 $font = $dompdf->getFontMetrics()->getFont('DejaVu Sans', 'normal');
-$canvas->page_text(490, 814, 'Page {PAGE_NUM} of {PAGE_COUNT}', $font, 7, [0.39, 0.45, 0.55]);
+$canvas->page_text(275, 829, 'Page {PAGE_NUM} of {PAGE_COUNT}', $font, 7, [0.39, 0.45, 0.55]);
 
 if (file_put_contents($out, $dompdf->output()) === false) {
     fwrite(STDERR, "cannot write output: $out\n");
