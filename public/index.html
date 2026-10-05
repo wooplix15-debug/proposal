@@ -441,7 +441,7 @@
 
       <section style="margin-top:20px">
         <h3>Project times and delivery records</h3>
-        <p style="font-size:12px;margin:8px 0">Your Zoho Project Delivery Data sheet is checked each time. Fill in Standard Days for product estimates and Actual Working Days for completed projects. You can add extra project notes below.</p>
+        <p style="font-size:12px;margin:8px 0">Your Zoho Project Delivery Data sheet is checked each time. Enter a number, a range such as 6–8 days, or a rate such as 1 day per page. Add actual working days and delivered scope to completed projects so the agent can compare them.</p>
         <input id="completedFiles" type="file" accept=".pdf,.doc,.docx,.txt,.md" multiple aria-label="Extra delivery notes">
         <textarea id="completedText" rows="5" style="width:100%;margin-top:10px;padding:12px" placeholder="Optional: add a delivery detail not already in the sheet" aria-label="Extra delivery notes"></textarea>
       </section>
@@ -601,7 +601,7 @@
         });
         if(review.duration_estimates && review.duration_estimates.length){
           element('h4','Time based on your project sheet',box);
-          review.duration_estimates.forEach(t=>element('p',`${t.product}: ${t.days} working days (${t.source}). ${t.reason}`,box));
+          review.duration_estimates.forEach(t=>element('p',`${t.product}: ${t.days}${t.duration_basis ? '' : ' working days'} (${t.source}). ${t.reason}`,box));
           element('p','These are estimates from your saved times. If more than one product is included, answer the schedule question to help set the overall timeline.',box);
         } else {
           element('p','No saved implementation time matched this request. Add a time to the sheet or clarify the scope before setting a timeline.',box);

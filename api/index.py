@@ -117,11 +117,13 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
         raise HTTPException(400, "Upload at most five requirements and five completed project records.")
     with tempfile.TemporaryDirectory(prefix='wooplix-analysis-') as work:
         requirements = await _extract_uploads(files, work, 'requirement')
-        completed = await _extract_uploads(completed_files, work, 'completed')
+        completed = [dict(row, kind='completed_project')
+                     for row in await _extract_uploads(completed_files, work, 'completed')]
     if text and text.strip():
         requirements.append({'source': 'Pasted requirement', 'text': text.strip()})
     if completed_text and completed_text.strip():
-        completed.append({'source': 'Pasted completed project record', 'text': completed_text.strip()})
+        completed.append({'source': 'Pasted completed project record', 'text': completed_text.strip(),
+                          'kind': 'completed_project'})
     if not requirements or len(requirements) > MAX_FILES:
         raise HTTPException(400, "Supply between one and five requirements.")
     # Explicit limit: do not silently drop evidence from the comparison.
