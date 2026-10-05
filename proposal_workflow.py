@@ -5,6 +5,7 @@ import hmac
 import json
 import os
 import time
+import re
 
 import wooplix_agent as agent
 
@@ -36,15 +37,56 @@ Return JSON: {"summary":"", "duration_uses":[{"record_id":"exact supplied record
 If no completed records were supplied, comparisons must be empty. Never invent records.
 '''
 
+_STOP_WORDS = {
+    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'in', 'into',
+    'is', 'it', 'of', 'on', 'or', 'our', 'the', 'their', 'this', 'to', 'we', 'with',
+    'work', 'project', 'implementation', 'implement', 'setup', 'set', 'up', 'need',
+}
+
+
+def _tokens(value):
+    return {x for x in re.findall(r'[a-z0-9]+', str(value or '').lower())
+            if len(x) > 1 and x not in _STOP_WORDS}
+
+
+def _record_score(requirement_text, requirement_terms, record):
+    product = str(record.get('product') or record.get('products') or '').strip()
+    score = 100 if product and product.lower() in requirement_text.lower() else 0
+    for field, weight in (('product', 5), ('products', 5), ('category', 1),
+                          ('scope', 2), ('complexity', 1), ('migration', 1), ('text', 1)):
+        score += len(requirement_terms & _tokens(record.get(field))) * weight
+    return score
+
+
+def _prompt_record(record):
+    return {key: value for key, value in record.items() if key != 'text'}
+
 
 def analyze(requirement, completed, crm, timing_sources=None):
     from groq import Groq
+    requirement_terms = _tokens(requirement)
+    requirement_text = requirement.lower()
+    product_records = [x for x in completed if x.get('kind') == 'module_baseline']
+    delivery_records = [x for x in completed if x.get('kind') == 'completed_project']
+    scope_records = sorted(
+        (( _record_score(requirement_text, requirement_terms, x), x) for x in product_records),
+        key=lambda pair: (-pair[0], pair[1].get('record_id', '')))
+    project_records = sorted(
+        ((_record_score(requirement_text, requirement_terms, x), x) for x in delivery_records),
+        key=lambda pair: (-pair[0], pair[1].get('source', '')))
+    relevant_records = [x for score, x in scope_records[:12] if score > 0]
+    relevant_projects = [x for score, x in project_records[:5] if score > 0]
+    product_time_catalog = [
+        {k: x[k] for k in ('record_id', 'product', 'category', 'days', 'days_min',
+                           'days_max', 'duration_basis') if k in x}
+        for x in product_records if x.get('days') is not None
+    ]
     payload = json.dumps({
         'requirement': requirement,
-        'completed_project_records': [x for x in completed if x.get('kind') == 'completed_project'],
-        'actual_product_delivery_records': [x for x in completed if x.get('kind') == 'module_baseline'],
-        'authorized_timing_records': [x for x in (timing_sources or []) if x.get('days') is not None],
-        'crm_precedent': crm,
+        'completed_project_records': [_prompt_record(x) for x in relevant_projects],
+        'matching_product_scope_records': [_prompt_record(x) for x in relevant_records],
+        'actual_product_time_catalog': product_time_catalog,
+        'crm_precedent': (crm or '')[:6000],
     }, ensure_ascii=False)
     response = Groq(api_key=agent.GROQ_API_KEY, timeout=90, max_retries=1).chat.completions.create(
         model=agent.GROQ_MODEL, temperature=0.1, max_completion_tokens=5000,
@@ -86,13 +128,16 @@ def analyze(requirement, completed, crm, timing_sources=None):
         questions = questions[:6]
         for i, q in enumerate(questions, 1):
             q['id'] = f'q{i}'
-    sources = {x['source'] for x in completed if x.get('kind') == 'completed_project'}
+    sources = {x['source'] for x in delivery_records}
     comparisons = []
     for row in result.get('comparisons', []):
         if isinstance(row, dict) and row.get('source') in sources:
             comparisons.append({k: str(row.get(k, ''))[:2000] for k in ('source', 'match', 'difference', 'lesson')})
     return {'summary': result['summary'][:4000], 'comparisons': comparisons[:10],
-            'questions': questions, 'duration_estimates': duration_estimates}
+            'questions': questions, 'duration_estimates': duration_estimates,
+            'context_record_ids': [x['record_id'] for x in relevant_records + relevant_projects if x.get('record_id')],
+            'context_sources': [x['source'] for x in relevant_projects
+                                if x.get('source') and not x.get('record_id')]}
 
 
 def _key():
@@ -132,7 +177,7 @@ def prepare_draft(context, answers):
             raise ValueError('Enter an answer for each question (up to 4000 characters).')
         clarified.append({'question': q['question'], 'answer': answer.strip()})
     req = context['requirement'] + '\n\nUSER CLARIFICATIONS\n' + json.dumps(clarified, ensure_ascii=False)
-    reference = context['crm'] + '\n\nCOMPLETED PROJECT DELIVERY RECORDS AND LIVE SHEET TIME DATA\n' + json.dumps(context['completed'], ensure_ascii=False)
+    reference = context['crm'] + '\n\nCOMPLETED PROJECT DELIVERY RECORDS AND LIVE SHEET TIME DATA\n' + json.dumps([_prompt_record(x) for x in context['completed']], ensure_ascii=False)
     reference += '\n\nREVIEWED COMPARISON\n' + json.dumps(context['analysis']['comparisons'], ensure_ascii=False)
     reference += '\n\nACTUAL DELIVERY TIMES MATCHED TO SAVED SHEET ROWS\n' + json.dumps(context['analysis'].get('duration_estimates', []), ensure_ascii=False)
     reference += '''\nUse relevant delivery lessons in scope/prerequisites/deliverables.

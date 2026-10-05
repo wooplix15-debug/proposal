@@ -145,8 +145,16 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
     try:
         for row in requirements:
             analysis = workflow.analyze(row['text'], completed, crm, live_records)
+            context_record_ids = set(analysis.get('context_record_ids', []))
+            context_record_ids.update(x['record_id'] for x in analysis.get('duration_estimates', [])
+                                      if x.get('record_id'))
+            context_sources = set(analysis.get('context_sources', []))
+            relevant_completed = [x for x in completed
+                                  if x.get('record_id') in context_record_ids
+                                  or (x.get('source') in context_sources and not x.get('record_id'))]
+            relevant_timing = [x for x in live_records if x.get('record_id') in context_record_ids]
             context = {'requirement': row['text'], 'source': row['source'],
-                       'completed': completed, 'timing_sources': live_records,
+                       'completed': relevant_completed, 'timing_sources': relevant_timing,
                        'crm': crm, 'analysis': analysis}
             reviews.append(dict(analysis, source=row['source'], review_token=workflow.seal(context)))
     except Exception as exc:
