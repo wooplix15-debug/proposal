@@ -45,6 +45,14 @@ def _parse_days(value):
         if value <= 0:
             return None
         return {'days': value, 'days_min': value, 'days_max': value}
+
+    # Some sheet cells store actual working days as a bare number (for example `1`).
+    match = re.fullmatch(r'\s*(\d+(?:\.\d+)?)\s*', cleaned)
+    if match:
+        value = float(match.group(1))
+        if value <= 0:
+            return None
+        return {'days': value, 'days_min': value, 'days_max': value}
     return None
 
 
