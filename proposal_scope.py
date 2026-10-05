@@ -206,12 +206,22 @@ def confirmed_scope(sections, requirement):
                 for module in modules:
                     names = module['product'].lower().replace('zoho ', '').split(' & ')
                     if any(n in question for n in names):
-                        target = (module['product'], 'Confirmed scope: ')
+                        if any(x in question for x in ('user', 'attendee', 'participant', 'license', 'count')):
+                            label = 'User / attendee volume: '
+                        elif any(x in question for x in ('form', 'workflow', 'application', 'module')):
+                            label = 'Custom forms & workflows: '
+                        else:
+                            label = 'Confirmed scope: '
+                        target = (module['product'], label)
                         break
             if target:
                 module = next((x for x in modules if product_matches(target[0], x['product'])), None)
                 if module:
-                    module['areas'].append({'area': 'Confirmed details', 'tasks': [target[1] + answer]})
+                    existing_area = next((a for a in module.get('areas', []) if a.get('area') == 'Confirmed details'), None)
+                    if existing_area:
+                        existing_area['tasks'].append(target[1] + answer)
+                    else:
+                        module.setdefault('areas', []).append({'area': 'Confirmed details', 'tasks': [target[1] + answer]})
     return modules
 
 

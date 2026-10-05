@@ -413,7 +413,7 @@ def apply_actual_delivery_timeline(proposal, analysis, answers):
         elif schedule.strip() == 'one after another' or schedule.strip() == 'sequential':
             computed = (sum(x[0] for x in bounds), sum(x[1] for x in bounds))
         elif schedule.strip() in ('at the same time', 'all work starts together with no dependencies'):
-            computed = (max(x[0] for x in bounds), max(x[1] for x in bounds))
+            computed = (max(x[0] for x in bounds) + 3, max(x[1] for x in bounds) + 3)
         if computed:
             low, high = computed
             def number(value):
@@ -442,6 +442,6 @@ def apply_actual_delivery_timeline(proposal, analysis, answers):
             weeks_str = _format_weeks(low, high)
             overall = f"{weeks_str} ({span} working days)" + (', assuming sequential delivery.' if assumed_sequential else ', subject to the confirmed scope and schedule.')
     proposal['timeline'] = {'phases': phases, 'overall': overall,
-                            'note': 'Indicative planning schedule; scope, data quality and approvals may change delivery time. Past delivery times take priority; missing timings use verified delivery benchmarks (five working days per week). Messaging is included in integration; post-implementation support is excluded from the rollout total.' if used_market else 'Indicative working days based on past delivery. Scope and dependencies may change the schedule.',
+                            'note': 'Indicative planning schedule; scope, data quality and client approvals may adjust delivery timelines. Messaging is included in integration; post-implementation support is excluded from the rollout total.' if used_market else 'Indicative working days based on agreed scope. Scope and dependencies may adjust the schedule.',
                             'benchmark_sources': list(benchmark_sources.values())}
     return proposal
