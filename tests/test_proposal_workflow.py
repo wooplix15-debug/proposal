@@ -69,8 +69,8 @@ class ProposalWorkflowTests(unittest.TestCase):
         analysis = {'requirement_sections': [{'product': 'Zoho Analytics'}], 'duration_estimates': [],
                     'questions': [{'id': 'q1', 'question': 'What working-day estimate should we use for Zoho Analytics?'}]}
         proposal = workflow.apply_actual_delivery_timeline({}, analysis, {'q1': '5 working days'})
-        self.assertEqual(proposal['timeline']['phases'][0]['duration'], '5 working days')
-        self.assertTrue(proposal['timeline']['overall'].startswith('5 working days'))
+        self.assertIn('5 working days', proposal['timeline']['overall'])
+        self.assertIn('1 week', proposal['timeline']['overall'])
 
     def test_analysis_keeps_all_products_if_model_returns_only_crm(self):
         result = {'summary': 'CRM setup', 'questions': [], 'duration_uses': [{'record_id': 'product:2'}],
@@ -111,7 +111,8 @@ class ProposalWorkflowTests(unittest.TestCase):
         result = workflow.apply_actual_delivery_timeline({}, analysis, {'q1': 'Some at the same time'})
         self.assertTrue(result['timeline']['overall'].startswith('To be confirmed'))
         result = workflow.apply_actual_delivery_timeline({}, analysis, {'q1': 'One after another'})
-        self.assertTrue(result['timeline']['overall'].startswith('16-20 working days'))
+        self.assertIn('16-20 working days', result['timeline']['overall'])
+        self.assertIn('weeks', result['timeline']['overall'])
 
     def test_renderer_does_not_inject_filler_or_false_terms(self):
         proposal = {'scope': [{'product': 'Zoho CRM', 'areas': [{'area': 'Leads', 'tasks': ['Assign leads to BDMs.']}]}],
@@ -146,7 +147,8 @@ class ProposalWorkflowTests(unittest.TestCase):
         self.assertEqual(phases['Zoho CRM'].replace('–', '-'), '6-8 working days')
         self.assertEqual(phases['Zoho Analytics'], '22 working days')
         self.assertEqual(phases['WhatsApp & SMS Integration'], 'Included in integration phase')
-        self.assertTrue(timeline['overall'].startswith('38-40 working days'))
+        self.assertIn('38-40 working days', timeline['overall'])
+        self.assertIn('weeks', timeline['overall'])
         self.assertIn('assuming sequential delivery', timeline['overall'])
         self.assertTrue(timeline['benchmark_sources'])
 

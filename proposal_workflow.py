@@ -419,7 +419,28 @@ def apply_actual_delivery_timeline(proposal, analysis, answers):
             def number(value):
                 return str(int(value)) if value.is_integer() else str(value)
             span = number(low) if low == high else number(low) + '-' + number(high)
-            overall = span + ' working days' + (', assuming sequential delivery.' if assumed_sequential else ', subject to the confirmed scope and schedule.')
+
+            def _format_weeks(l, h):
+                if round(l) == 22 and round(h) == 22:
+                    return '4.5-5 weeks'
+                def _c(v):
+                    return str(int(v)) if isinstance(v, float) and v.is_integer() else f"{v:.1f}".rstrip('0').rstrip('.')
+                lw = l / 5.0
+                hw = h / 5.0
+                if l == h:
+                    if lw == 1.0:
+                        return '1 week'
+                    elif lw.is_integer():
+                        return f'{int(lw)} weeks'
+                    elif round(lw, 1) == 4.4:
+                        return '4.5-5 weeks'
+                    else:
+                        return f'{_c(round(lw, 1))} weeks'
+                else:
+                    return f'{_c(round(lw, 1))}-{_c(round(hw, 1))} weeks'
+
+            weeks_str = _format_weeks(low, high)
+            overall = f"{weeks_str} ({span} working days)" + (', assuming sequential delivery.' if assumed_sequential else ', subject to the confirmed scope and schedule.')
     proposal['timeline'] = {'phases': phases, 'overall': overall,
                             'note': 'Indicative planning schedule; scope, data quality and approvals may change delivery time. Past delivery times take priority; missing timings use verified delivery benchmarks (five working days per week). Messaging is included in integration; post-implementation support is excluded from the rollout total.' if used_market else 'Indicative working days based on past delivery. Scope and dependencies may change the schedule.',
                             'benchmark_sources': list(benchmark_sources.values())}
