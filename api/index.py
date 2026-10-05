@@ -181,7 +181,7 @@ async def generate(request: Request, reviews: str = Form(...)):
         for row in reviewed:
             context = workflow.unseal(row['review_token'])
             req, reference = workflow.prepare_draft(context, row.get('answers', {}))
-            prepared.append((req, context['source'], reference))
+            prepared.append((req, context['source'], reference, context['analysis'], row.get('answers', {})))
     except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -199,10 +199,11 @@ async def generate(request: Request, reviews: str = Form(...)):
         with tempfile.TemporaryDirectory(prefix="wooplix-") as work:
             item_count = len(prepared)
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
-                for index, (requirement, source_name, reference_text) in enumerate(prepared, start=1):
+                for index, (requirement, source_name, reference_text, analysis, answers) in enumerate(prepared, start=1):
                     proposal = agent.draft_proposal(requirement, reference_text)
                     if not agent._looks_like_proposal(proposal):
                         raise HTTPException(status_code=502, detail=f"Could not create a proposal from {source_name}. Please try again.")
+                    proposal = workflow.apply_actual_delivery_timeline(proposal, analysis, answers)
                     client_name = (proposal.get("client") or {}).get("company_name") or Path(source_name).stem
                     stem = _safe_name(client_name)
                     if stem in names:

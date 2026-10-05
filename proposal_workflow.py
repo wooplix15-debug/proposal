@@ -117,6 +117,7 @@ def analyze(requirement, completed, crm, timing_sources=None):
         seen.add(record['record_id'])
         duration_estimates.append({'record_id': record['record_id'], 'product': record.get('product') or record.get('products') or 'Completed project',
                                    'days': record['days'], 'duration_basis': record.get('duration_basis', ''),
+                                   'days_min': record.get('days_min'), 'days_max': record.get('days_max'),
                                    'scope': record.get('scope', ''),
                                    'source': record['source'], 'kind': record['kind'],
                                    'reason': str(use.get('reason', ''))[:1000]})
@@ -196,3 +197,91 @@ sum saved phase ranges only if they say one after another; use the longest suppo
 phase range only if they confirm all work starts together with no dependencies; for a mix, keep
 the overall timeline open unless their answer explains the order. No invented commitments.'''
     return req, reference
+
+
+def _duration_text(estimate):
+    value = estimate.get('days')
+    if estimate.get('duration_basis'):
+        return str(value)
+    if isinstance(value, (int, float)):
+        value = str(int(value)) if float(value).is_integer() else str(value)
+    return f"{value} working day" if str(value) == '1' else f"{value} working days"
+
+
+def _duration_bounds(estimate):
+    low, high = estimate.get('days_min'), estimate.get('days_max')
+    if isinstance(low, (int, float)) and isinstance(high, (int, float)):
+        return float(low), float(high)
+    return None
+
+
+def apply_actual_delivery_timeline(proposal, analysis, answers):
+    """Carry matched actual sheet durations into the final proposal deterministically."""
+    estimates = analysis.get('duration_estimates', [])
+    product_estimates = [x for x in estimates if x.get('kind') == 'module_baseline']
+    evidence = product_estimates or [x for x in estimates if x.get('kind') == 'completed_project']
+    if not evidence:
+        return proposal
+
+    timeline = proposal.get('timeline')
+    if not isinstance(timeline, dict):
+        timeline = {'phases': [], 'overall': 'To be confirmed during discovery'}
+    phases = timeline.get('phases')
+    if not isinstance(phases, list):
+        phases = []
+    for estimate in evidence:
+        label = str(estimate.get('product') or 'Comparable completed project')
+        duration = f"{_duration_text(estimate)} (actual delivery record)"
+        already_present = any(
+            isinstance(phase, dict)
+            and label.lower() in str(phase.get('phase', '')).lower()
+            and str(estimate.get('days')) in str(phase.get('duration', ''))
+            for phase in phases
+        )
+        if not already_present:
+            phases.append({'phase': f'{label} Actual Delivery Reference', 'duration': duration})
+
+    schedule_answer = ''
+    for question in analysis.get('questions', []):
+        if any(word in str(question.get('question', '')).lower() for word in ('schedule', 'one after another', 'overlap')):
+            schedule_answer = str(answers.get(question.get('id'), '')).lower()
+            break
+
+    overall = str(timeline.get('overall') or 'To be confirmed during discovery')
+    is_open = not overall.strip() or overall.lower().startswith(('to be confirmed', 'tbd', 'to be agreed'))
+    numeric = [_duration_bounds(x) for x in product_estimates]
+    computed = None
+    if product_estimates and all(numeric):
+        if len(product_estimates) == 1:
+            computed = numeric[0]
+        elif 'one after another' in schedule_answer or 'sequential' in schedule_answer:
+            computed = (sum(x[0] for x in numeric), sum(x[1] for x in numeric))
+        elif 'same time' in schedule_answer or 'at the same time' in schedule_answer:
+            computed = (max(x[0] for x in numeric), max(x[1] for x in numeric))
+    elif not product_estimates and len(evidence) == 1:
+        computed = _duration_bounds(evidence[0])
+
+    def format_days(value):
+        return str(int(value)) if float(value).is_integer() else str(value)
+
+    if is_open and computed:
+        low, high = computed
+        span = format_days(low) if low == high else f'{format_days(low)}–{format_days(high)}'
+        if len(product_estimates) == 1:
+            basis = 'based on actual completed work'
+        elif product_estimates:
+            basis = 'based on matched actual phase times'
+        else:
+            basis = 'based on comparable completed work'
+        overall = f'Indicative: {span} working days, {basis}.'
+    elif is_open and len(evidence) == 1 and evidence[0].get('duration_basis'):
+        overall = f"To be confirmed once the volume is known; actual delivery rate: {_duration_text(evidence[0])}."
+    elif is_open:
+        overall = 'To be confirmed during discovery; matched actual delivery times are shown by phase below.'
+    else:
+        references = '; '.join(f"{x.get('product')}: {_duration_text(x)} actual" for x in evidence)
+        if references and not all(str(x.get('days')) in overall for x in evidence):
+            overall = f'{overall.rstrip(". ")}. Historical actual delivery reference: {references}.'
+
+    proposal['timeline'] = {'phases': phases, 'overall': overall}
+    return proposal
