@@ -753,6 +753,7 @@ table.dt thead tr {{ page-break-after: avoid; }}
 table.dt th {{ background-color: #1a365d; color: #fff; font-weight: bold; text-align: left; padding: 6px 8px; border: 1px solid #1a365d; font-size: 8pt; text-transform: uppercase; }}
 table.dt td {{ border: 1px solid #cbd5e1; padding: 5px 8px; vertical-align: top; line-height: 1.35; }}
 table.dt tr {{ page-break-inside: avoid; }}
+#timeline td {{ font-size:8pt; padding:4px 6px; line-height:1.25; }}
 table.dt tr:nth-child(even) td {{ background-color: #f8fafc; }}
 .cat-h {{ font-size: 9.5pt; font-weight: bold; color: #1a365d; margin: 8px 0 2px 0; }}
 ul.cat-ul {{ margin: 2px 0 8px 16px; padding: 0; }}
@@ -868,7 +869,7 @@ ul.cat-ul li {{ font-size: 9pt; margin-bottom: 3px; }}
         out.append('<div style="page-break-inside:avoid;">')
         out.append('<h2 class="sh">7. Indicative Implementation Timeline &amp; Milestone Roadmap</h2>')
         out.append('<p class="body">The implementation follows a staged rollout to ensure minimal operational disruption:</p>')
-        out.append('<table class="dt"><tr><th style="width:26%;">Milestone / Phase</th><th style="width:40%;">Key Activities &amp; Focus</th><th style="width:14%;">Duration</th><th style="width:20%;">Milestone Gate Sign-off</th></tr>')
+        out.append('<table class="dt" id="timeline"><tr><th style="width:26%;">Milestone / Phase</th><th style="width:40%;">Key Activities &amp; Focus</th><th style="width:14%;">Duration</th><th style="width:20%;">Milestone Gate Sign-off</th></tr>')
         for ph in phases:
             out.append(f'<tr><td><strong>{esc(ph.get("phase",""))}</strong></td>'
                        f'<td>{esc(ph.get("key_activities",""))}</td>'
