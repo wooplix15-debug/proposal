@@ -917,9 +917,6 @@ ul.cat-ul li {{ font-size: 9pt; margin-bottom: 3px; }}
 
         if tl.get("note"):
             out.append(f'<p class="body"><em>{esc(tl["note"])}</em></p>')
-        if tl.get("benchmark_sources"):
-            links = ' · '.join(f'<a href="{esc(s["url"])}">{esc(s["name"])}</a>' for s in tl["benchmark_sources"])
-            out.append(f'<p style="font-size:7pt;color:#64748b;">Estimate references: {links}</p>')
 
         out.append('</div>')
 

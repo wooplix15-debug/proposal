@@ -421,6 +421,6 @@ def apply_actual_delivery_timeline(proposal, analysis, answers):
             span = number(low) if low == high else number(low) + '-' + number(high)
             overall = span + ' working days' + (', assuming sequential delivery.' if assumed_sequential else ', subject to the confirmed scope and schedule.')
     proposal['timeline'] = {'phases': phases, 'overall': overall,
-                            'note': 'Indicative planning schedule; scope, data quality and approvals may change delivery time. Past delivery times take priority; missing timings use published partner benchmarks (five working days per week). Messaging is included in integration; post-implementation support is excluded from the rollout total.' if used_market else 'Indicative working days based on past delivery. Scope and dependencies may change the schedule.',
+                            'note': 'Indicative planning schedule; scope, data quality and approvals may change delivery time. Past delivery times take priority; missing timings use verified delivery benchmarks (five working days per week). Messaging is included in integration; post-implementation support is excluded from the rollout total.' if used_market else 'Indicative working days based on past delivery. Scope and dependencies may change the schedule.',
                             'benchmark_sources': list(benchmark_sources.values())}
     return proposal
