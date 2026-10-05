@@ -232,12 +232,14 @@ def apply_actual_delivery_timeline(proposal, analysis, answers):
     for estimate in evidence:
         label = str(estimate.get('product') or 'Comparable completed project')
         duration = f"{_duration_text(estimate)} (actual delivery record)"
-        already_present = any(
-            isinstance(phase, dict)
-            and label.lower() in str(phase.get('phase', '')).lower()
-            and str(estimate.get('days')) in str(phase.get('duration', ''))
-            for phase in phases
-        )
+        matching_phase = next((phase for phase in phases if
+                               isinstance(phase, dict)
+                               and label.lower() in str(phase.get('phase', '')).lower()
+                               and str(estimate.get('days')) in str(phase.get('duration', ''))), None)
+        already_present = matching_phase is not None
+        if matching_phase and 'actual' not in str(matching_phase.get('duration', '')).lower():
+            existing_duration = str(matching_phase.get('duration') or '').rstrip('. ')
+            matching_phase['duration'] = f'{existing_duration} (actual delivery record)'
         if not already_present:
             phases.append({'phase': f'{label} Actual Delivery Reference', 'duration': duration})
 
@@ -279,8 +281,10 @@ def apply_actual_delivery_timeline(proposal, analysis, answers):
     elif is_open:
         overall = 'To be confirmed during discovery; matched actual delivery times are shown by phase below.'
     else:
-        references = '; '.join(f"{x.get('product')}: {_duration_text(x)} actual" for x in evidence)
-        if references and not all(str(x.get('days')) in overall for x in evidence):
+        references = '; '.join(f"{x.get('product')}: {_duration_text(x)} actual delivery time" for x in evidence)
+        has_actual_context = 'actual' in overall.lower() or 'historical' in overall.lower()
+        has_duration_context = all(_duration_text(x) in overall for x in evidence)
+        if references and not (has_actual_context and has_duration_context):
             overall = f'{overall.rstrip(". ")}. Historical actual delivery reference: {references}.'
 
     proposal['timeline'] = {'phases': phases, 'overall': overall}
