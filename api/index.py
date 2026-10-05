@@ -150,10 +150,10 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
     except Exception as exc:
         print(f'Analysis failed: {type(exc).__name__}')
         raise HTTPException(502, 'Could not analyze the requirements. Please try again.') from exc
-    baselines = sum(x['kind'] == 'module_baseline' for x in live_records)
+    baselines = sum(x['kind'] == 'module_baseline' and x.get('days') is not None for x in live_records)
     projects = sum(x['kind'] == 'completed_project' for x in live_records)
     return {'reviews': reviews, 'notices': notices,
-            'evidence_note': f'Read the Google Sheet now: {baselines} Zoho time baseline(s) and {projects} completed project record(s) with actual days.'}
+            'evidence_note': f'Read the Google Sheet now: {baselines} actual Zoho product delivery-time record(s) and {projects} completed project record(s).'}
 
 
 @app.post("/api/generate")

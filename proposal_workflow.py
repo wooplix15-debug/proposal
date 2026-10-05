@@ -15,12 +15,13 @@ baselines from the user's live Google Sheet. Product rows with blank times still
 scope context but cannot support a duration. CRM deals are separate,
 unverified precedent: never describe a deal as completed without delivery evidence.
 Use only stated facts. Never copy a past client's identity or private details into the
-new proposal. The Google Sheet's Standard Days and Actual Working Days are authorized
-for planning estimates; they are estimates, never delivery promises. Do not ask the user
-to confirm using these saved times. Match only records whose scope fits the new request.
+new proposal. Product times in the Google Sheet are actual working days from completed
+work; Past Delivered Projects contains actual project durations. Use these as historical
+delivery evidence for an indicative new-project timeline, never a guaranteed commitment.
+Do not ask the user to confirm using these saved times. Match only records whose scope fits the new request.
 Ask a question when the requested scope, data migration, integrations, scale or complexity
 could change the estimate and the sheet does not answer it. Never invent days or sum
-module estimates into a total project schedule when sequencing or overlap is unknown.
+module durations into a total project schedule when sequencing or overlap is unknown.
 If a requested product has no matching saved time, ask for the missing estimate or scope
 needed to set one, and leave the proposal timeline open until supported by data.
 Ask up to 6 focused questions only for missing/conflicting details that affect scope,
@@ -41,7 +42,7 @@ def analyze(requirement, completed, crm, timing_sources=None):
     payload = json.dumps({
         'requirement': requirement,
         'completed_project_records': [x for x in completed if x.get('kind') == 'completed_project'],
-        'product_scope_baselines': [x for x in completed if x.get('kind') == 'module_baseline'],
+        'actual_product_delivery_records': [x for x in completed if x.get('kind') == 'module_baseline'],
         'authorized_timing_records': [x for x in (timing_sources or []) if x.get('days') is not None],
         'crm_precedent': crm,
     }, ensure_ascii=False)
@@ -133,15 +134,16 @@ def prepare_draft(context, answers):
     req = context['requirement'] + '\n\nUSER CLARIFICATIONS\n' + json.dumps(clarified, ensure_ascii=False)
     reference = context['crm'] + '\n\nCOMPLETED PROJECT DELIVERY RECORDS AND LIVE SHEET TIME DATA\n' + json.dumps(context['completed'], ensure_ascii=False)
     reference += '\n\nREVIEWED COMPARISON\n' + json.dumps(context['analysis']['comparisons'], ensure_ascii=False)
-    reference += '\n\nAPPROVED TIME ESTIMATES MATCHED TO SAVED SHEET ROWS\n' + json.dumps(context['analysis'].get('duration_estimates', []), ensure_ascii=False)
+    reference += '\n\nACTUAL DELIVERY TIMES MATCHED TO SAVED SHEET ROWS\n' + json.dumps(context['analysis'].get('duration_estimates', []), ensure_ascii=False)
     reference += '''\nUse relevant delivery lessons in scope/prerequisites/deliverables.
 Do not import another client's requirements or private identity. Leave unanswered items
 in open_points. Past actual figures are historical benchmarks only; use for a proposed
-price only when the user explicitly confirms applicability. Saved standard/actual times
-may support an indicative timeline when their row IDs appear in the matched estimate list.
-Use those exact days only. Do not invent, scale, or add a fixed buffer to any duration.
-Treat a matched completed-project Actual Working Days value as the elapsed time for that
-whole comparable project. Do not add that whole-project duration to separate product days.
+price only when the user explicitly confirms applicability. Matched product times and
+completed-project Actual Working Days are historical actuals that may support an
+indicative timeline. Use only durations whose row IDs appear in the matched list. Keep
+their saved values exact; do not invent, scale, or add a fixed buffer. Treat a matched
+completed-project duration as the elapsed time for that whole comparable project. Do not
+add that whole-project duration to separate product days.
 For multiple modules, show supported phase estimates. Keep saved ranges as ranges; never
 replace them with a midpoint. Keep per-page/per-unit times tied to their stated unit and
 ask for the quantity when it is missing. Use the user's scheduling answer:

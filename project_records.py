@@ -1,4 +1,4 @@
-"""Read product time baselines and completed-project durations from Google Sheets."""
+"""Read actual product delivery times and completed-project records from Google Sheets."""
 import csv
 import io
 import json
@@ -70,7 +70,8 @@ def load_live_sheet_records():
             duration = _parse_days(row.get('Standard Days'))
             if not product:
                 continue
-            record = {'record_id': f'product:{number}', 'kind': 'module_baseline', 'product': product,
+            record = {'record_id': f'product:{number}', 'kind': 'module_baseline',
+                      'duration_type': 'actual_product_delivery_time', 'product': product,
                       'scope': scope, 'category': (row.get('Category') or '').strip(),
                       'complexity': (row.get('Complexity Level') or '').strip(),
                       'users': (row.get('Typical User Range') or '').strip(),
