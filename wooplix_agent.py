@@ -155,13 +155,24 @@ def extract_requirement(path_or_dash):
         return p.read_text(errors="ignore").strip()
     if suffix == ".docx":
         from docx import Document
+        from docx.text.paragraph import Paragraph
+        from docx.table import Table
         d = Document(str(p))
-        chunks = [x.text.strip() for x in d.paragraphs if x.text.strip()]
-        for t in d.tables:
-            for row in t.rows:
-                cs = [c.text.strip() for c in row.cells]
-                if any(cs):
-                    chunks.append(" | ".join(cs))
+        chunks = []
+        # Keep each table beside its heading, rather than moving every table
+        # to the end and losing module/workflow context.
+        for element in d.element.body:
+            if element.tag.endswith("}p"):
+                text = Paragraph(element, d).text.strip()
+                if text:
+                    chunks.append(text)
+            elif element.tag.endswith("}tbl"):
+                for row in Table(element, d).rows:
+                    cs = [re.sub(r"\s+", " ", c.text).strip().replace("|", "／")
+                          for c in row.cells]
+                    if any(cs):
+                        chunks.append(" | ".join(cs))
+                chunks.append("")
         return "\n".join(chunks)
     if suffix == ".doc":
         try:

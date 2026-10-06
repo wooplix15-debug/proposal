@@ -13,6 +13,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import wooplix_agent as brand
+from brd_structure import SPECIFICATION_SECTIONS, source_tables, statement_tables, validated_model_tables
 
 
 def _section_items(sections):
@@ -42,7 +43,7 @@ def _source_list(requirement, section, next_headers):
         return []
     result = []
     for line in lines[start + 1:]:
-        numbered_heading = re.match(r"^\s*\d+(?:\.\d+)+[.)]?\s+", line)
+        numbered_heading = re.match(r"^\s*\d+(?:\.\d+)*[.)]?\s+[A-Z]", line)
         known_heading = any(re.match(rf"^\s*(?:\d+[.)]\s*)?{header}\b", line, re.I)
                             for header in next_headers)
         if numbered_heading or known_heading:
@@ -113,13 +114,32 @@ separate requirements-analysis workflow, not the proposal writer. Use only the
 reviewed requirement checklist and user answers supplied below. Do not use external
 product knowledge. Do not add features, software products, integrations, roles,
 workflows, rules, metrics or commitments. Preserve uncertainty as uncertainty.
-Return JSON with one concise factual overview and process_views. Each process_view
+The answers input includes the complete original document and the question text
+with each reviewed answer. Read those details, including tables and scope boundaries.
+Produce a detailed BRD specification, not merely a summary checklist. Cover only
+relevant sections: application responsibilities, stakeholders, business process,
+fields/master data, workflows/business rules, roles/access, reports/dashboards,
+integrations, notifications, scope boundaries and acceptance criteria.
+Keep future/optional/excluded items explicitly qualified. Never turn a suggestion
+or feasibility condition into an agreed commitment. Do not copy sample client scope.
+In specification table cells use EXACT excerpts from the source or reviewed answers,
+existing BR IDs, or 'To be confirmed'. Never invent field types, mandatory flags,
+thresholds, report formulas, permissions, owners, integrations or sequences.
+Provide an evidence array with one exact source excerpt per table row. All factual
+cells in that row must occur within that excerpt. Keep the original relationships
+between fields and values; do not join unrelated facts from different modules.
+Do not reproduce tables already supplied in the source; they will be preserved.
+Return JSON with one concise factual overview, specification_tables and process_views. Each process_view
 must use an exact existing business-area heading and include only a short explanation
 of activities explicitly listed for that area. Add requirement_ids from the exact
 IDs supplied. Cross-application relationships can be described only when an explicit
 requirement states them. If the source does not define a sequence, do not make one.
 Schema: {"overview":"", "process_views":[{"area":"","description":"",
-"requirement_ids":["BR-001"]}]}"""
+"requirement_ids":["BR-001"]}], "specification_tables":[{"section":"Fields and Master Data",
+"title":"Lead fields", "columns":["Field","Required","Mapping"],
+"rows":[["EXACT SOURCE EXCERPT","To be confirmed","EXACT SOURCE EXCERPT"]],
+"evidence":["Exact contiguous source passage supporting this row"]}]}.
+Valid section names: """ + ", ".join(SPECIFICATION_SECTIONS)
         user = json.dumps({"requirements": [
             {"id": item["id"], "area": item["area"], "statement": item["requirement"]}
             for item in _section_items(sections)],
@@ -133,7 +153,7 @@ Schema: {"overview":"", "process_views":[{"area":"","description":"",
                     kwargs = {"model": model,
                               "messages": [{"role": "system", "content": system},
                                            {"role": "user", "content": user}],
-                              "temperature": 0.1, "max_completion_tokens": 2200,
+                              "temperature": 0.1, "max_completion_tokens": 6500,
                               "response_format": {"type": "json_object"}}
                     if "gpt-oss" in model:
                         kwargs["reasoning_effort"] = "low"
@@ -152,8 +172,12 @@ Schema: {"overview":"", "process_views":[{"area":"","description":"",
                             views.append({"area": area,
                                           "description": str(view.get("description", ""))[:700],
                                           "requirement_ids": ids})
+                    source = answers.get("source_requirement", "") if isinstance(answers, dict) else ""
+                    source += "\n" + json.dumps(answers.get("decisions", []), ensure_ascii=False)
                     return {"overview": str(data.get("overview") or fallback_summary)[:1600],
-                            "process_views": views}
+                            "process_views": views,
+                            "specification_tables": validated_model_tables(
+                                data.get("specification_tables", []), source, _section_items(sections))}
                 except RateLimitError:
                     break
                 except Exception:
@@ -174,8 +198,38 @@ def build_document(requirement, analysis, answers, source_name=""):
 
     sections = _combine_explicit_shared_areas(
         requirement, analysis.get("requirement_sections") or [])
+    boundaries = []
+    scoped_sections = []
+    for section in sections:
+        included = []
+        for item in section.get("requirements", []):
+            # Keep explicit future/excluded scope out of the committed checklist.
+            if re.search(r"\b(?:not required (?:in|for|during) (?:the |this |current )?phase|out of scope|excluded from (?:this |the |current )?scope|future phase|future scope|future enhancement|optional feature)\b",
+                         str(item), re.I):
+                boundaries.append([str(section.get("product", "Business")), str(item)])
+            else:
+                included.append(item)
+        if included:
+            scoped_sections.append(dict(section, requirements=included))
+    sections = scoped_sections
     requirements = _section_items(sections)
-    brief = _draft_brief(sections, answers, str(analysis.get("summary") or "").strip())
+    decisions = [{"question": q["question"], "answer": answers[q["id"]]}
+                 for q in questions]
+    brief = _draft_brief(sections, {"source_requirement": requirement,
+                                  "decisions": decisions},
+                         str(analysis.get("summary") or "").strip())
+    specifications = source_tables(requirement)
+    # Source tables are authoritative. Model tables supplement uncovered
+    # categories, rather than duplicating or replacing supplied definitions.
+    source_categories = {table["section"] for table in specifications}
+    specifications += statement_tables(requirements, source_categories)
+    source_categories.update(table["section"] for table in specifications)
+    specifications += [table for table in brief.get("specification_tables", [])
+                       if table["section"] not in source_categories]
+    if boundaries:
+        specifications.append({"section": "Scope Boundaries", "title": "Qualified scope",
+                               "columns": ["Business area", "Source condition"],
+                               "rows": boundaries, "origin": "source"})
     activities = []
     for section in sections:
         product = str(section.get("product") or "").strip()
@@ -228,6 +282,7 @@ def build_document(requirement, analysis, answers, source_name=""):
         "status": "Draft for business review",
         "summary": brief["overview"],
         "process_views": brief["process_views"],
+        "specification_tables": specifications,
         "objectives": objectives,
         "current_state": current_state,
         "stakeholders": stakeholders,
@@ -254,16 +309,25 @@ def _e(value):
     return html.escape(str(value or ""), quote=True)
 
 
+def _functional_rows(doc):
+    detailed_ids = {cell for table in doc.get("specification_tables", [])
+                    for row in table["rows"] for cell in row
+                    if re.fullmatch(r"BR-\d+", str(cell))}
+    return [row for row in doc["requirements"]
+            if row["area"].casefold() != "training" and row["id"] not in detailed_ids]
+
+
 def build_html(doc):
     """Render a concise BRD; omit sections unsupported by the source request."""
     main = brand._logo_data_uri()
     badge = brand._badge_data_uri()
-    main_img = f'<img src="{main}" style="height:38px" alt="Wooplix">' if main else ""
-    badge_img = f'<img src="{badge}" style="height:26px" alt="Partner">' if badge else ""
+    main_img = f'<img src="{main}" style="position:absolute;left:0;top:0;height:38px" alt="Wooplix">' if main else ""
+    badge_img = f'<img src="{badge}" style="position:absolute;right:0;top:0;height:26px" alt="Partner">' if badge else ""
     out = [f"""<!doctype html><html><head><meta charset="utf-8"><style>
 @page {{ size:A4; margin:27mm 15mm 22mm; }}
 body {{ font-family:'DejaVu Sans',sans-serif; font-size:9pt; line-height:1.45; color:#1e293b; }}
-.header {{ position:fixed; top:-20mm; width:100%; }} .header td:last-child {{text-align:right}}
+.header {{ position:fixed; top:-20mm; width:100%; z-index:1000; }} .header td:last-child {{text-align:right}}
+.approval {{page-break-inside:avoid}}
 .footer {{position:fixed;bottom:-8mm;width:100%;border-top:1px solid #cbd5e1;font-size:7pt;color:#64748b}}
 .footer td {{padding-top:3mm}} h1 {{font-size:19pt;color:#002b49;margin:12mm 0 8mm}}
 h2 {{page-break-after:avoid;background:#1a365d;color:#fff;font-size:11pt;padding:7px 10px;margin:18px 0 8px}}
@@ -272,7 +336,7 @@ p {{margin:4px 0 8px}} table {{width:100%;border-collapse:collapse;margin:6px 0 
 thead {{display:table-header-group}} tr {{page-break-inside:avoid}} th {{background:#1a365d;color:white;text-align:left;font-size:8pt;padding:6px;border:1px solid #1a365d}}
 td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-child(even) td {{background:#f8fafc}}
 .meta td:first-child {{background:#edf3f8;font-weight:bold;width:30%}} .muted {{color:#64748b;font-size:8pt}}
-</style></head><body><table class="header"><tr><td>{main_img}</td><td>{badge_img}</td></tr></table>
+</style></head><body><div class="header">{main_img}{badge_img}</div>
 <table class="footer"><tr><td><b>{_e(brand.COMPANY_NAME)}</b> · Confidential</td><td align="center">{_e(brand.COMPANY_EMAIL)}</td><td align="right">{_e(brand.COMPANY_WEBSITE)}</td></tr></table>
 <h1>{_e(doc['title'])}</h1>
 <table class="meta"><tbody>"""]
@@ -299,6 +363,18 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
                 out.append(f"<tr><td>{_e(group['area'])}</td><td>{_e(', '.join(ids))}</td></tr>")
         out.append("</tbody></table>")
 
+    def specification_tables(category):
+        tables = [table for table in doc.get("specification_tables", [])
+                  if table["section"] == category]
+        for table in tables:
+            out.append(f"<h3>{_e(table['title'])}</h3><table><thead><tr>")
+            out.extend(f"<th>{_e(column)}</th>" for column in table["columns"])
+            out.append("</tr></thead><tbody>")
+            for row in table["rows"]:
+                out.append("<tr>" + "".join(f"<td>{_e(cell)}</td>" for cell in row) + "</tr>")
+            out.append("</tbody></table>")
+        return bool(tables)
+
     section("Project Overview")
     out.append(f"<p>{_e(doc['summary'])}</p>")
     if doc["objectives"]:
@@ -316,6 +392,10 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
     for area in doc["requirements_by_area"]:
         out.append(f"<tr><td>{_e(area['name'])}</td><td>{_e(', '.join(area['requirement_ids']))}</td></tr>")
     out.append("</tbody></table>")
+    for category in ("Application Responsibilities", "Business Process", "Scope Boundaries"):
+        if any(table["section"] == category for table in doc.get("specification_tables", [])):
+            section(category)
+            specification_tables(category)
     if doc["process_views"]:
         section("Business Process View")
         for view in doc["process_views"]:
@@ -323,13 +403,20 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
             out.append(f"<p class='muted'>Requirements: {_e(', '.join(view['requirement_ids']))}</p>")
     section("Functional Requirements")
     out.append("<p>Requirement statements are based on the submitted request. IDs can be used during review and implementation.</p>")
-    list_table([row for row in doc["requirements"] if row["area"].casefold() != "training"])
-    for title, key in (("Business Rules", "business_rules"), ("Data Requirements", "data_requirements"),
-                       ("Integrations", "integration_requirements"), ("Reports and Analytics", "reporting_requirements"),
-                       ("Roles, Access and Security", "access_requirements")):
-        if doc[key]:
+    list_table(_functional_rows(doc))
+    for title, key, category in (("Business Rules", "business_rules", "Workflows and Business Rules"),
+                                ("Fields and Master Data", "data_requirements", "Fields and Master Data"),
+                                ("Integrations", "integration_requirements", "Integrations"),
+                                ("Reports and Analytics", "reporting_requirements", "Reports and Dashboards"),
+                                ("Roles, Access and Security", "access_requirements", "Roles and Access")):
+        if doc[key] or any(t["section"] == category for t in doc.get("specification_tables", [])):
             section(title)
-            reference_table(doc[key])
+            if not specification_tables(category):
+                reference_table(doc[key])
+    for category in ("Stakeholders", "Notifications", "Business Details"):
+        if any(table["section"] == category for table in doc.get("specification_tables", [])):
+            section(category)
+            specification_tables(category)
     if doc["training_requirements"]:
         section("Training")
         list_table([row for row in doc["requirements"] if row["area"].casefold() == "training"], "Training requirement")
@@ -344,13 +431,20 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
         for row in doc["open_decisions"]:
             out.append(f"<tr><td>{_e(row['question'])}</td><td>{_e(row['answer'])}</td></tr>")
         out.append("</tbody></table>")
-    if doc["acceptance_criteria"]:
+    if any(t["section"] == "Acceptance Criteria" for t in doc.get("specification_tables", [])):
+        section("Acceptance Criteria")
+        specification_tables("Acceptance Criteria")
+    elif doc["acceptance_criteria"]:
         section("Acceptance Criteria")
         out.append("<ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["acceptance_criteria"]) + "</ul>")
+    else:
+        section("Acceptance Review Plan")
+        out.append("<p>Proposed review: demonstrate the requirements listed in Scope and the detailed specifications for each business area. Detailed pass criteria and reviewers are to be confirmed before acceptance. Status: pending client review.</p>")
+    out.append('<div class="approval">')
     section("Review and Approval")
     out.append("<p>Approval confirms that the requirements listed above reflect the agreed business need.</p>")
     out.append("<table><thead><tr><th>Reviewer</th><th>Organization / role</th><th>Signature</th><th>Date</th></tr></thead><tbody><tr><td></td><td>Client</td><td></td><td></td></tr><tr><td></td><td>Implementation partner</td><td></td><td></td></tr></tbody></table>")
-    out.append("</body></html>")
+    out.append("</div></body></html>")
     return "".join(out)
 
 
@@ -405,6 +499,20 @@ def build_docx(doc, output):
         for value in values:
             report.add_paragraph(str(value), style="List Bullet")
 
+    def specification_tables(category):
+        tables = [table for table in doc.get("specification_tables", [])
+                  if table["section"] == category]
+        for spec in tables:
+            report.add_heading(spec["title"], level=2)
+            table = report.add_table(rows=1, cols=len(spec["columns"]))
+            table.style = "Table Grid"
+            for cell, label in zip(table.rows[0].cells, spec["columns"]):
+                cell.text = label
+            for values in spec["rows"]:
+                for cell, value in zip(table.add_row().cells, values):
+                    cell.text = value
+        return bool(tables)
+
     heading("Project Overview")
     report.add_paragraph(doc["summary"])
     if doc["objectives"]:
@@ -424,6 +532,10 @@ def build_docx(doc, output):
     for area in doc["requirements_by_area"]:
         cells = scope_table.add_row().cells
         cells[0].text, cells[1].text = area["name"], ", ".join(area["requirement_ids"])
+    for category in ("Application Responsibilities", "Business Process", "Scope Boundaries"):
+        if any(table["section"] == category for table in doc.get("specification_tables", [])):
+            heading(category)
+            specification_tables(category)
     if doc["process_views"]:
         heading("Business Process View")
         for view in doc["process_views"]:
@@ -452,13 +564,20 @@ def build_docx(doc, output):
                 cells = table.add_row().cells
                 cells[0].text, cells[1].text = group["area"], ", ".join(ids)
 
-    requirement_table([row for row in doc["requirements"] if row["area"].casefold() != "training"])
-    for title, key in (("Business Rules", "business_rules"), ("Data Requirements", "data_requirements"),
-                       ("Integrations", "integration_requirements"), ("Reports and Analytics", "reporting_requirements"),
-                       ("Roles, Access and Security", "access_requirements")):
-        if doc[key]:
+    requirement_table(_functional_rows(doc))
+    for title, key, category in (("Business Rules", "business_rules", "Workflows and Business Rules"),
+                                ("Fields and Master Data", "data_requirements", "Fields and Master Data"),
+                                ("Integrations", "integration_requirements", "Integrations"),
+                                ("Reports and Analytics", "reporting_requirements", "Reports and Dashboards"),
+                                ("Roles, Access and Security", "access_requirements", "Roles and Access")):
+        if doc[key] or any(t["section"] == category for t in doc.get("specification_tables", [])):
             heading(title)
-            reference_table(doc[key])
+            if not specification_tables(category):
+                reference_table(doc[key])
+    for category in ("Stakeholders", "Notifications", "Business Details"):
+        if any(table["section"] == category for table in doc.get("specification_tables", [])):
+            heading(category)
+            specification_tables(category)
     if doc["training_requirements"]:
         heading("Training")
         requirement_table([row for row in doc["requirements"] if row["area"].casefold() == "training"], "Training requirement")
@@ -474,9 +593,15 @@ def build_docx(doc, output):
         for row in doc["open_decisions"]:
             cells = table.add_row().cells
             cells[0].text, cells[1].text = row["question"], row["answer"]
-    if doc["acceptance_criteria"]:
+    if any(t["section"] == "Acceptance Criteria" for t in doc.get("specification_tables", [])):
+        heading("Acceptance Criteria")
+        specification_tables("Acceptance Criteria")
+    elif doc["acceptance_criteria"]:
         heading("Acceptance Criteria")
         bullets(doc["acceptance_criteria"])
+    else:
+        heading("Acceptance Review Plan")
+        report.add_paragraph("Proposed review: demonstrate the requirements listed in Scope and the detailed specifications for each business area. Detailed pass criteria and reviewers are to be confirmed before acceptance. Status: pending client review.")
     heading("Review and Approval")
     report.add_paragraph("Approval confirms that the requirements listed above reflect the agreed business need.")
     signoff = report.add_table(rows=1, cols=4)
@@ -486,6 +611,19 @@ def build_docx(doc, output):
     for role in ("Client", "Implementation partner"):
         row = signoff.add_row().cells
         row[1].text = role
+    # Match the Wooplix table palette and repeat column labels across pages.
+    for index, table in enumerate(report.tables):
+        if index:
+            first = table.rows[0]
+            first._tr.get_or_add_trPr().append(parse_xml(f'<w:tblHeader {nsdecls("w")}/>'))
+            for cell in first.cells:
+                cell._tc.get_or_add_tcPr().append(parse_xml(f'<w:shd {nsdecls("w")} w:fill="1a365d"/>'))
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.bold = True
+                        run.font.color.rgb = RGBColor(255, 255, 255)
+        for row in table.rows:
+            row._tr.get_or_add_trPr().append(parse_xml(f'<w:cantSplit {nsdecls("w")}/>'))
     report.save(output)
     return output
 
