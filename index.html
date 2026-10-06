@@ -665,8 +665,11 @@
         }
         if(review.duration_estimates && review.duration_estimates.length){
           element('h4','Estimated working days',box);
-          review.duration_estimates.forEach(t=>element('p',`${t.product}: ${t.days}${t.duration_basis ? '' : ' working days'}`,box));
-          element('p','Based on actual delivery times from past work. The final schedule depends on the confirmed scope.',box);
+          review.duration_estimates.forEach(t=>{
+            const basis=t.kind==='market_estimate'?'published planning estimate':'past delivery';
+            element('p',`${t.product}: ${t.days} working days (based on ${basis})`,box);
+          });
+          element('p','These are planning estimates. The final schedule depends on the confirmed scope.',box);
         } else {
           element('p','No matching delivery time is available. Confirm the timeline during discovery.',box);
         }
@@ -677,8 +680,8 @@
           select.id=`answer-${index}-${q.id}`;select.setAttribute('aria-label',q.question);
           element('option','Choose an answer',select).value='';
           q.options.forEach(o=>{element('option',o,select).value=o;});
-          element('option','Other — enter your answer',select).value='__other__';
-          element('option','Leave open for discovery',select).value='Leave open for discovery';
+          element('option','My answer is different',select).value='__other__';
+          element('option',"I'll answer later",select).value='Leave open for discovery';
           const other=element('textarea','',field);other.id=`other-${index}-${q.id}`;
           other.placeholder='Write your answer';other.maxLength=4000;other.hidden=true;
           other.setAttribute('aria-label','Other answer: '+q.question);other.style.cssText='width:100%;padding:8px;margin-top:8px';
