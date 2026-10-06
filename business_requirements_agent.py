@@ -317,6 +317,16 @@ def _functional_rows(doc):
             if row["area"].casefold() != "training" and row["id"] not in detailed_ids]
 
 
+def _specs_for(doc, categories):
+    return [table for table in doc.get("specification_tables", [])
+            if table["section"] in categories]
+
+
+def _nonempty_areas(doc):
+    return [area for area in doc["requirements_by_area"]
+            if any(row["area"] == area["name"] for row in doc["requirements"])]
+
+
 def build_html(doc):
     """Render a concise BRD; omit sections unsupported by the source request."""
     main = brand._logo_data_uri()
@@ -345,8 +355,12 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
         out.append(f"<tr><td>{_e(label)}</td><td>{_e(value)}</td></tr>")
     out.append("</tbody></table>")
 
+    chapter_number = 0
+
     def section(title):
-        out.append(f"<h2>{_e(title)}</h2>")
+        nonlocal chapter_number
+        chapter_number += 1
+        out.append(f"<h2>{chapter_number}. {_e(title)}</h2>")
 
     def list_table(rows, first="Requirement"):
         out.append(f"<table><thead><tr><th style='width:12%'>ID</th><th style='width:24%'>Business area</th><th>{_e(first)}</th></tr></thead><tbody>")
@@ -375,50 +389,72 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
             out.append("</tbody></table>")
         return bool(tables)
 
-    section("Project Overview")
+    section("Executive Summary")
     out.append(f"<p>{_e(doc['summary'])}</p>")
-    if doc["objectives"]:
-        section("Business Objectives")
-        out.append("<ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["objectives"]) + "</ul>")
+    if doc["current_state"] or doc["objectives"] or doc["stakeholders"]:
+        section("Business Context and Objectives")
     if doc["current_state"]:
-        section("Current Business Context")
-        out.append("<ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["current_state"]) + "</ul>")
+        out.append("<h3>Current State</h3><ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["current_state"]) + "</ul>")
+    if doc["objectives"]:
+        out.append("<h3>Business Objectives</h3><ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["objectives"]) + "</ul>")
     if doc["stakeholders"]:
-        section("Stakeholders")
-        out.append("<ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["stakeholders"]) + "</ul>")
-    section("Scope")
+        out.append("<h3>Stakeholders</h3><ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["stakeholders"]) + "</ul>")
+    section("Project Scope")
     out.append("<p>The following business areas and requirements are included because they appear in the submitted requirement.</p>")
     out.append("<table><thead><tr><th>Business area</th><th>Included requirements</th></tr></thead><tbody>")
     for area in doc["requirements_by_area"]:
         out.append(f"<tr><td>{_e(area['name'])}</td><td>{_e(', '.join(area['requirement_ids']))}</td></tr>")
     out.append("</tbody></table>")
-    for category in ("Application Responsibilities", "Business Process", "Scope Boundaries"):
-        if any(table["section"] == category for table in doc.get("specification_tables", [])):
-            section(category)
+    if _specs_for(doc, {"Scope Boundaries"}):
+        out.append("<h3>Scope Conditions</h3>")
+        specification_tables("Scope Boundaries")
+    has_architecture = bool(doc["process_views"] or _specs_for(doc, {"Application Responsibilities", "Business Process"}))
+    if has_architecture:
+        section("Solution Architecture")
+    for category in ("Application Responsibilities",):
+        if _specs_for(doc, {category}):
+            out.append("<h3>Application Overview</h3>")
             specification_tables(category)
-    if doc["process_views"]:
-        section("Business Process View")
+    if doc["process_views"] or _specs_for(doc, {"Business Process"}):
+        out.append("<h3>Business Process Flow</h3>")
         for view in doc["process_views"]:
             out.append(f"<h3>{_e(view['area'])}</h3><p>{_e(view['description'])}</p>")
             out.append(f"<p class='muted'>Requirements: {_e(', '.join(view['requirement_ids']))}</p>")
-    section("Functional Requirements")
-    out.append("<p>Requirement statements are based on the submitted request. IDs can be used during review and implementation.</p>")
-    list_table(_functional_rows(doc))
-    for title, key, category in (("Business Rules", "business_rules", "Workflows and Business Rules"),
-                                ("Fields and Master Data", "data_requirements", "Fields and Master Data"),
-                                ("Integrations", "integration_requirements", "Integrations"),
-                                ("Reports and Analytics", "reporting_requirements", "Reports and Dashboards"),
-                                ("Roles, Access and Security", "access_requirements", "Roles and Access")):
-        if doc[key] or any(t["section"] == category for t in doc.get("specification_tables", [])):
+        specification_tables("Business Process")
+    if _specs_for(doc, {"Fields and Master Data"}):
+        section("Master Data Requirements")
+        specification_tables("Fields and Master Data")
+
+    section("Functional Requirements by Module")
+    rows_by_area = {}
+    for row in doc["requirements"]:
+        rows_by_area.setdefault(row["area"], []).append(row)
+    for area in _nonempty_areas(doc):
+        name = area["name"]
+        out.append(f"<h3>{_e(name)}</h3>")
+        rows = rows_by_area.get(name, [])
+        if rows:
+            out.append("<table><thead><tr><th style='width:14%'>Requirement ID</th><th>Business Requirement</th></tr></thead><tbody>")
+            for row in rows:
+                out.append(f"<tr><td>{_e(row['id'])}</td><td>{_e(row['requirement'])}</td></tr>")
+            out.append("</tbody></table>")
+    for title, categories in (
+        ("Approval Workflow and Access", ("Workflows and Business Rules", "Roles and Access")),
+        ("Reports and Dashboard Specifications", ("Reports and Dashboards",)),
+        ("Integrations", ("Integrations",)),
+        ("Alerts and Notifications", ("Notifications",)),
+        ("Additional Business Details", ("Business Details",)),
+    ):
+        tables = _specs_for(doc, categories)
+        if tables:
             section(title)
-            if not specification_tables(category):
-                reference_table(doc[key])
-    for category in ("Stakeholders", "Notifications", "Business Details"):
-        if any(table["section"] == category for table in doc.get("specification_tables", [])):
-            section(category)
-            specification_tables(category)
+            for category in categories:
+                specification_tables(category)
+    if _specs_for(doc, {"Stakeholders"}):
+        section("Stakeholder Roles")
+        specification_tables("Stakeholders")
     if doc["training_requirements"]:
-        section("Training")
+        section("Training Requirements")
         list_table([row for row in doc["requirements"] if row["area"].casefold() == "training"], "Training requirement")
     if doc["commercial_categories"]:
         section("Commercial Items Requested")
@@ -489,8 +525,12 @@ def build_docx(doc, output):
         cells[0].text, cells[1].text = label, str(value)
         cells[0]._tc.get_or_add_tcPr().append(parse_xml(f'<w:shd {nsdecls("w")} w:fill="edf3f8"/>'))
 
+    chapter_number = 0
+
     def heading(value):
-        h = report.add_heading(value, level=1)
+        nonlocal chapter_number
+        chapter_number += 1
+        h = report.add_heading(f"{chapter_number}. {value}", level=1)
         for run in h.runs:
             run.font.color.rgb = RGBColor(0x1a, 0x36, 0x5d)
         return h
@@ -513,18 +553,20 @@ def build_docx(doc, output):
                     cell.text = value
         return bool(tables)
 
-    heading("Project Overview")
+    heading("Executive Summary")
     report.add_paragraph(doc["summary"])
-    if doc["objectives"]:
-        heading("Business Objectives")
-        bullets(doc["objectives"])
+    if doc["current_state"] or doc["objectives"] or doc["stakeholders"]:
+        heading("Business Context and Objectives")
     if doc["current_state"]:
-        heading("Current Business Context")
+        report.add_heading("Current State", level=2)
         bullets(doc["current_state"])
+    if doc["objectives"]:
+        report.add_heading("Business Objectives", level=2)
+        bullets(doc["objectives"])
     if doc["stakeholders"]:
-        heading("Stakeholders")
+        report.add_heading("Stakeholders", level=2)
         bullets(doc["stakeholders"])
-    heading("Scope")
+    heading("Project Scope")
     report.add_paragraph("The following business areas and requirements are included because they appear in the submitted requirement.")
     scope_table = report.add_table(rows=1, cols=2)
     scope_table.style = "Table Grid"
@@ -532,55 +574,66 @@ def build_docx(doc, output):
     for area in doc["requirements_by_area"]:
         cells = scope_table.add_row().cells
         cells[0].text, cells[1].text = area["name"], ", ".join(area["requirement_ids"])
-    for category in ("Application Responsibilities", "Business Process", "Scope Boundaries"):
-        if any(table["section"] == category for table in doc.get("specification_tables", [])):
-            heading(category)
-            specification_tables(category)
-    if doc["process_views"]:
-        heading("Business Process View")
+    if _specs_for(doc, {"Scope Boundaries"}):
+        report.add_heading("Scope Conditions", level=2)
+        specification_tables("Scope Boundaries")
+    has_architecture = bool(doc["process_views"] or _specs_for(doc, {"Application Responsibilities", "Business Process"}))
+    if has_architecture:
+        heading("Solution Architecture")
+    if _specs_for(doc, {"Application Responsibilities"}):
+        report.add_heading("Application Overview", level=2)
+        specification_tables("Application Responsibilities")
+    if doc["process_views"] or _specs_for(doc, {"Business Process"}):
+        report.add_heading("Business Process Flow", level=2)
         for view in doc["process_views"]:
-            report.add_heading(view["area"], level=2)
+            report.add_heading(view["area"], level=3)
             report.add_paragraph(view["description"])
-            report.add_paragraph("Requirements: " + ", ".join(view["requirement_ids"]))
-    heading("Functional Requirements")
-    report.add_paragraph("Requirement statements below preserve the reviewed request. Each BRD ID can be used to discuss scope and record approval.")
-    def requirement_table(rows, third_label="Requirement"):
-        table = report.add_table(rows=1, cols=3)
-        table.style = "Table Grid"
-        for cell, label in zip(table.rows[0].cells, ("ID", "Business area", third_label)):
-            cell.text = label
-        for row in rows:
-            cells = table.add_row().cells
-            cells[0].text, cells[1].text, cells[2].text = row["id"], row["area"], row["requirement"]
+        specification_tables("Business Process")
+    if _specs_for(doc, {"Fields and Master Data"}):
+        heading("Master Data Requirements")
+        specification_tables("Fields and Master Data")
 
-    def reference_table(rows):
+    heading("Functional Requirements by Module")
+    rows_by_area = {}
+    for row in doc["requirements"]:
+        rows_by_area.setdefault(row["area"], []).append(row)
+    for area in _nonempty_areas(doc):
+        name = area["name"]
+        report.add_heading(name, level=2)
+        rows = rows_by_area.get(name, [])
+        if rows:
+            table = report.add_table(rows=1, cols=2)
+            table.style = "Table Grid"
+            table.rows[0].cells[0].text = "Requirement ID"
+            table.rows[0].cells[1].text = "Business Requirement"
+            for row in rows:
+                cells = table.add_row().cells
+                cells[0].text, cells[1].text = row["id"], row["requirement"]
+
+    for title, categories in (
+        ("Approval Workflow and Access", ("Workflows and Business Rules", "Roles and Access")),
+        ("Reports and Dashboard Specifications", ("Reports and Dashboards",)),
+        ("Integrations", ("Integrations",)),
+        ("Alerts and Notifications", ("Notifications",)),
+        ("Additional Business Details", ("Business Details",)),
+    ):
+        if _specs_for(doc, categories):
+            heading(title)
+            for category in categories:
+                specification_tables(category)
+    if _specs_for(doc, {"Stakeholders"}):
+        heading("Stakeholder Roles")
+        specification_tables("Stakeholders")
+
+    if doc["training_requirements"]:
+        heading("Training Requirements")
+        rows = [row for row in doc["requirements"] if row["area"].casefold() == "training"]
         table = report.add_table(rows=1, cols=2)
         table.style = "Table Grid"
-        table.rows[0].cells[0].text, table.rows[0].cells[1].text = "Business area", "Requirement IDs"
-        for group in rows:
-            ids = [row["id"] for row in doc["requirements"]
-                   if row["area"] == group["area"] and row["requirement"] in group["items"]]
-            if ids:
-                cells = table.add_row().cells
-                cells[0].text, cells[1].text = group["area"], ", ".join(ids)
-
-    requirement_table(_functional_rows(doc))
-    for title, key, category in (("Business Rules", "business_rules", "Workflows and Business Rules"),
-                                ("Fields and Master Data", "data_requirements", "Fields and Master Data"),
-                                ("Integrations", "integration_requirements", "Integrations"),
-                                ("Reports and Analytics", "reporting_requirements", "Reports and Dashboards"),
-                                ("Roles, Access and Security", "access_requirements", "Roles and Access")):
-        if doc[key] or any(t["section"] == category for t in doc.get("specification_tables", [])):
-            heading(title)
-            if not specification_tables(category):
-                reference_table(doc[key])
-    for category in ("Stakeholders", "Notifications", "Business Details"):
-        if any(table["section"] == category for table in doc.get("specification_tables", [])):
-            heading(category)
-            specification_tables(category)
-    if doc["training_requirements"]:
-        heading("Training")
-        requirement_table([row for row in doc["requirements"] if row["area"].casefold() == "training"], "Training requirement")
+        table.rows[0].cells[0].text, table.rows[0].cells[1].text = "Requirement ID", "Training Requirement"
+        for row in rows:
+            cells = table.add_row().cells
+            cells[0].text, cells[1].text = row["id"], row["requirement"]
     if doc["commercial_categories"]:
         heading("Commercial Items Requested")
         report.add_paragraph("Pricing was requested for the following items. No amounts have been added.")
