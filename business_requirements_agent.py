@@ -42,8 +42,10 @@ def _source_list(requirement, section, next_headers):
         return []
     result = []
     for line in lines[start + 1:]:
-        if (re.match(r"^\s*\d+[.)]\s+", line)
-                or any(re.match(rf"^\s*{header}\b", line, re.I) for header in next_headers)):
+        numbered_heading = re.match(r"^\s*\d+(?:\.\d+)+[.)]?\s+", line)
+        known_heading = any(re.match(rf"^\s*(?:\d+[.)]\s*)?{header}\b", line, re.I)
+                            for header in next_headers)
+        if numbered_heading or known_heading:
             break
         text = re.sub(r"^\s*(?:[-•*]|\d+[.)])\s*", "", line).strip()
         if text:
@@ -112,7 +114,7 @@ Schema: {"overview":"", "process_views":[{"area":"","description":"",
 
 
 def build_document(requirement, analysis, answers, source_name=""):
-    """Make a detailed BRD from the reviewed checklist without expanding scope."""
+    """Make a source-grounded BRD with useful detail and no empty boilerplate."""
     questions = analysis.get("questions") or []
     if set(answers) != {q["id"] for q in questions}:
         raise ValueError("Answer each question or choose Leave open.")
@@ -160,8 +162,13 @@ def build_document(requirement, analysis, answers, source_name=""):
                 for row in activities if any(any(term in item.casefold() for term in terms)
                                                for item in row["items"])]
 
-    # Keep stated business objectives verbatim when the source contains that section.
+    # Preserve stated objectives; only use this heading if it exists in the source.
     objectives = _source_list(requirement, "Main Objective", ["Cost Proposal", "Zoho CRM", "Training"])
+    objectives += _source_list(requirement, "Business Objectives", ["Current Business", "Scope of Work"])
+    current_state = _source_list(requirement, "Current State Summary", ["Business Objectives", "Scope"])
+    stakeholders = _source_list(requirement, "Target Audience", ["Current State Summary", "Business Objectives"])
+    acceptance_criteria = (_source_list(requirement, "Go-Live Acceptance Criteria", ["Document Sign-Off"])
+                           or _source_list(requirement, "Acceptance Criteria", ["Document Sign-Off"]))
     # Use the reviewed, source-filtered checklist as the authority for every product.
     areas = [{"name": row["area"], "requirements": row["items"]} for row in activities]
     open_decisions = []
@@ -171,6 +178,16 @@ def build_document(requirement, analysis, answers, source_name=""):
             open_decisions.append({"question": question["question"], "answer": "To be confirmed"})
         else:
             open_decisions.append({"question": question["question"], "answer": answer})
+
+    # Group requirements once, with stable IDs, so readers can move from module
+    # scope to a specific requirement without repeating the same lists in every
+    # section of the BRD.
+    requirements_by_area = []
+    by_area_ids = {}
+    for row in requirements:
+        by_area_ids.setdefault(row["area"], []).append(row["id"])
+    for name, ids in by_area_ids.items():
+        requirements_by_area.append({"name": name, "requirement_ids": ids})
 
     return {
         "title": "Business Requirements Document",
@@ -184,15 +201,19 @@ def build_document(requirement, analysis, answers, source_name=""):
         "summary": brief["overview"],
         "process_views": brief["process_views"],
         "objectives": objectives,
+        "current_state": current_state,
+        "stakeholders": stakeholders,
+        "acceptance_criteria": acceptance_criteria,
         "areas": areas,
         "requirements": requirements,
-        "business_rules": [row for row in requirements
-                           if any(term in row["requirement"].casefold()
-                                  for term in ("duplicate", "same company", "billable / non-billable", "planned vs actual"))],
-        "data_requirements": matches("data", "record", "duplicate", "contact", "lead", "company", "event-wise", "batch-wise", "timesheet", "work notes"),
+        # These are tagged copies of source requirements, never newly authored
+        # requirements. Rendering skips a category if it has no matching item.
+        "business_rules": matches("rule", "duplicate", "same company", "approval", "mandatory", "validation", "billable / non-billable", "planned vs actual"),
+        "data_requirements": matches("data", "record", "field", "duplicate", "contact", "lead", "company", "event-wise", "batch-wise", "timesheet", "work notes", "master"),
         "integration_requirements": matches("integration", "integrat", "whatsapp", "sms", "crm integration"),
-        "reporting_requirements": matches("report", "dashboard", "analytics", "tracking"),
-        "access_requirements": matches("role", "permission", "assignment", "assigned"),
+        "reporting_requirements": matches("report", "dashboard", "analytics", "metric", "kpi"),
+        "access_requirements": matches("role", "permission", "access", "assignment", "assigned", "security"),
+        "requirements_by_area": requirements_by_area,
         "training_requirements": next((x["items"] for x in activities if x["area"].casefold() == "training"), []),
         "commercial_categories": analysis.get("commercial_categories") or [],
         "open_decisions": open_decisions,
@@ -206,7 +227,7 @@ def _e(value):
 
 
 def build_html(doc):
-    """Render a separate BRD in Wooplix's branded document style."""
+    """Render a concise BRD; omit sections unsupported by the source request."""
     main = brand._logo_data_uri()
     badge = brand._badge_data_uri()
     main_img = f'<img src="{main}" style="height:38px" alt="Wooplix">' if main else ""
@@ -241,66 +262,61 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
             out.append(f"<tr><td>{_e(row['id'])}</td><td>{_e(row['area'])}</td><td>{_e(row['requirement'])}</td></tr>")
         out.append("</tbody></table>")
 
-    section("1. Project Overview")
+    section("Project Overview")
     out.append(f"<p>{_e(doc['summary'])}</p>")
-    section("2. Business Objectives")
-    out.append("<ul>")
-    for item in doc["objectives"]:
-        out.append(f"<li>{_e(item)}</li>")
-    if not doc["objectives"]:
-        out.append("<li>The overall business objectives require confirmation by the business owner.</li>")
-    out.append("</ul>")
-    section("3. Scope and Business Areas")
-    for area in doc["areas"]:
-        out.append(f"<h3>{_e(area['name'])}</h3><ul>")
-        for item in area["requirements"]:
-            out.append(f"<li>{_e(item)}</li>")
-        out.append("</ul>")
+    if doc["objectives"]:
+        section("Business Objectives")
+        out.append("<ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["objectives"]) + "</ul>")
+    if doc["current_state"]:
+        section("Current Business Context")
+        out.append("<ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["current_state"]) + "</ul>")
+    if doc["stakeholders"]:
+        section("Stakeholders")
+        out.append("<ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["stakeholders"]) + "</ul>")
+    section("Scope")
+    out.append("<p>The following business areas and requirements are included because they appear in the submitted requirement.</p>")
+    out.append("<table><thead><tr><th>Business area</th><th>Included requirements</th></tr></thead><tbody>")
+    for area in doc["requirements_by_area"]:
+        out.append(f"<tr><td>{_e(area['name'])}</td><td>{_e(', '.join(area['requirement_ids']))}</td></tr>")
+    out.append("</tbody></table>")
     if doc["process_views"]:
-        section("4. Business Process View (Draft)")
-        out.append("<p>These short descriptions organize the stated work areas. They are not a new scope or an assumed sequence; confirm the interpretation during business review.</p>")
+        section("Business Process View")
         for view in doc["process_views"]:
             out.append(f"<h3>{_e(view['area'])}</h3><p>{_e(view['description'])}</p>")
             out.append(f"<p class='muted'>Requirements: {_e(', '.join(view['requirement_ids']))}</p>")
-    section("5. Detailed Functional Requirements")
-    out.append("<p>Requirement statements below preserve the reviewed request. Each BRD ID can be used to discuss scope and record approval.</p>")
+    section("Functional Requirements")
+    out.append("<p>Requirement statements are based on the submitted request. IDs can be used during review and implementation.</p>")
     list_table(doc["requirements"])
-
-    section("6. Business Rules")
-    if doc["business_rules"]:
-        list_table(doc["business_rules"])
-    else:
-        out.append("<p class='muted'>No specific business rules were stated in the request.</p>")
-    for title, key in (("7. Data and Information Requirements", "data_requirements"),
-                       ("8. Integrations", "integration_requirements"),
-                       ("9. Reporting and Analytics", "reporting_requirements"),
-                       ("10. User Roles and Access", "access_requirements")):
-        section(title)
+    supplemental = (("Business Rules", "business_rules"),
+                    ("Data Requirements", "data_requirements"),
+                    ("Integrations", "integration_requirements"),
+                    ("Reports and Analytics", "reporting_requirements"),
+                    ("Roles, Access and Security", "access_requirements"))
+    for title, key in supplemental:
         rows = [item for group in doc[key] for item in group["items"]]
         if rows:
+            section(title)
             out.append("<ul>" + "".join(f"<li>{_e(item)}</li>" for item in rows) + "</ul>")
-        else:
-            out.append("<p class='muted'>No specific requirements were stated in the request.</p>")
-    section("11. Training Requirements")
     if doc["training_requirements"]:
+        section("Training")
         out.append("<ul>" + "".join(f"<li>{_e(x)}</li>" for x in doc["training_requirements"]) + "</ul>")
-    else:
-        out.append("<p class='muted'>Training requirements were not specified.</p>")
-    section("12. Commercial Items Requested")
-    out.append("<p>Amounts were not included in the requirements. The requested quote categories are:</p><ul>")
-    out.extend(f"<li>{_e(x)}</li>" for x in doc["commercial_categories"])
-    out.append("</ul>")
-    section("13. Decisions and Details to Confirm")
-    out.append("<table><thead><tr><th>Open item</th><th>Current status / answer</th></tr></thead><tbody>")
+    if doc["commercial_categories"]:
+        section("Commercial Items Requested")
+        out.append("<p>Pricing was requested for the following items. No amounts have been added.</p><ul>")
+        out.extend(f"<li>{_e(x)}</li>" for x in doc["commercial_categories"])
+        out.append("</ul>")
     if doc["open_decisions"]:
+        section("Questions and Decisions")
+        out.append("<table><thead><tr><th>Question</th><th>Answer or status</th></tr></thead><tbody>")
         for row in doc["open_decisions"]:
             out.append(f"<tr><td>{_e(row['question'])}</td><td>{_e(row['answer'])}</td></tr>")
-    else:
-        out.append("<tr><td colspan='2'>No open items were recorded during this review.</td></tr>")
-    out.append("</tbody></table>")
-    section("14. Review and Sign-off")
-    out.append("<p>Review each BRD requirement with the business owner. Confirm the workflow details, data rules, access, integrations, reports, and any open items before implementation scope is approved.</p>")
-    out.append("<table><tbody><tr><td style='width:50%;height:48px'>Business owner / date</td><td>Wooplix / date</td></tr></tbody></table>")
+        out.append("</tbody></table>")
+    if doc["acceptance_criteria"]:
+        section("Acceptance Criteria")
+        out.append("<ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["acceptance_criteria"]) + "</ul>")
+    section("Review and Approval")
+    out.append("<p>Approval confirms that the requirements listed above reflect the agreed business need.</p>")
+    out.append("<table><thead><tr><th>Reviewer</th><th>Organization / role</th><th>Signature</th><th>Date</th></tr></thead><tbody><tr><td></td><td>Client</td><td></td><td></td></tr><tr><td></td><td>Implementation partner</td><td></td><td></td></tr></tbody></table>")
     out.append("</body></html>")
     return "".join(out)
 
@@ -356,22 +372,32 @@ def build_docx(doc, output):
         for value in values:
             report.add_paragraph(str(value), style="List Bullet")
 
-    heading("1. Project Overview")
+    heading("Project Overview")
     report.add_paragraph(doc["summary"])
-    heading("2. Business Objectives")
-    bullets(doc["objectives"] or ["The overall business objectives require confirmation by the business owner."])
-    heading("3. Scope and Business Areas")
-    for area in doc["areas"]:
-        report.add_heading(area["name"], level=2)
-        bullets(area["requirements"])
+    if doc["objectives"]:
+        heading("Business Objectives")
+        bullets(doc["objectives"])
+    if doc["current_state"]:
+        heading("Current Business Context")
+        bullets(doc["current_state"])
+    if doc["stakeholders"]:
+        heading("Stakeholders")
+        bullets(doc["stakeholders"])
+    heading("Scope")
+    report.add_paragraph("The following business areas and requirements are included because they appear in the submitted requirement.")
+    scope_table = report.add_table(rows=1, cols=2)
+    scope_table.style = "Table Grid"
+    scope_table.rows[0].cells[0].text, scope_table.rows[0].cells[1].text = "Business area", "Included requirement IDs"
+    for area in doc["requirements_by_area"]:
+        cells = scope_table.add_row().cells
+        cells[0].text, cells[1].text = area["name"], ", ".join(area["requirement_ids"])
     if doc["process_views"]:
-        heading("4. Business Process View (Draft)")
-        report.add_paragraph("These descriptions organize the stated work areas. They are not new scope or an assumed sequence; confirm the interpretation during business review.")
+        heading("Business Process View")
         for view in doc["process_views"]:
             report.add_heading(view["area"], level=2)
             report.add_paragraph(view["description"])
             report.add_paragraph("Requirements: " + ", ".join(view["requirement_ids"]))
-    heading("5. Detailed Functional Requirements")
+    heading("Functional Requirements")
     report.add_paragraph("Requirement statements below preserve the reviewed request. Each BRD ID can be used to discuss scope and record approval.")
     table = report.add_table(rows=1, cols=3)
     table.style = "Table Grid"
@@ -380,42 +406,40 @@ def build_docx(doc, output):
     for row in doc["requirements"]:
         cells = table.add_row().cells
         cells[0].text, cells[1].text, cells[2].text = row["id"], row["area"], row["requirement"]
-    heading("6. Business Rules")
-    if doc["business_rules"]:
-        table = report.add_table(rows=1, cols=3)
-        table.style = "Table Grid"
-        for cell, label in zip(table.rows[0].cells, ("ID", "Business area", "Rule")):
-            cell.text = label
-        for row in doc["business_rules"]:
-            cells = table.add_row().cells
-            cells[0].text, cells[1].text, cells[2].text = row["id"], row["area"], row["requirement"]
-    else:
-        report.add_paragraph("No specific business rules were stated in the request.")
-    for title, key in (("7. Data and Information Requirements", "data_requirements"),
-                       ("8. Integrations", "integration_requirements"),
-                       ("9. Reporting and Analytics", "reporting_requirements"),
-                       ("10. User Roles and Access", "access_requirements")):
-        heading(title)
+    for title, key in (("Business Rules", "business_rules"), ("Data Requirements", "data_requirements"),
+                       ("Integrations", "integration_requirements"), ("Reports and Analytics", "reporting_requirements"),
+                       ("Roles, Access and Security", "access_requirements")):
         items = [item for group in doc[key] for item in group["items"]]
-        bullets(items or ["No specific requirements were stated in the request."])
-    heading("11. Training Requirements")
-    bullets(doc["training_requirements"] or ["Training requirements were not specified."])
-    heading("12. Commercial Items Requested")
-    report.add_paragraph("Amounts were not included in the requirements. The requested quote categories are:")
-    bullets(doc["commercial_categories"])
-    heading("13. Decisions and Details to Confirm")
-    table = report.add_table(rows=1, cols=2)
-    table.style = "Table Grid"
-    table.rows[0].cells[0].text, table.rows[0].cells[1].text = "Open item", "Current status / answer"
-    for row in doc["open_decisions"]:
-        cells = table.add_row().cells
-        cells[0].text, cells[1].text = row["question"], row["answer"]
-    heading("14. Review and Sign-off")
-    report.add_paragraph("Review each BRD requirement with the business owner. Confirm workflow details, data rules, access, integrations, reports, and open items before implementation scope is approved.")
-    signoff = report.add_table(rows=1, cols=2)
+        if items:
+            heading(title)
+            bullets(items)
+    if doc["training_requirements"]:
+        heading("Training")
+        bullets(doc["training_requirements"])
+    if doc["commercial_categories"]:
+        heading("Commercial Items Requested")
+        report.add_paragraph("Pricing was requested for the following items. No amounts have been added.")
+        bullets(doc["commercial_categories"])
+    if doc["open_decisions"]:
+        heading("Questions and Decisions")
+        table = report.add_table(rows=1, cols=2)
+        table.style = "Table Grid"
+        table.rows[0].cells[0].text, table.rows[0].cells[1].text = "Question", "Answer or status"
+        for row in doc["open_decisions"]:
+            cells = table.add_row().cells
+            cells[0].text, cells[1].text = row["question"], row["answer"]
+    if doc["acceptance_criteria"]:
+        heading("Acceptance Criteria")
+        bullets(doc["acceptance_criteria"])
+    heading("Review and Approval")
+    report.add_paragraph("Approval confirms that the requirements listed above reflect the agreed business need.")
+    signoff = report.add_table(rows=1, cols=4)
     signoff.style = "Table Grid"
-    signoff.rows[0].cells[0].text = "Business owner / date"
-    signoff.rows[0].cells[1].text = "Wooplix / date"
+    for cell, label in zip(signoff.rows[0].cells, ("Reviewer", "Organization / role", "Signature", "Date")):
+        cell.text = label
+    for role in ("Client", "Implementation partner"):
+        row = signoff.add_row().cells
+        row[1].text = role
     report.save(output)
     return output
 
