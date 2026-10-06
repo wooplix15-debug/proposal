@@ -53,6 +53,56 @@ def _source_list(requirement, section, next_headers):
     return list(dict.fromkeys(result))
 
 
+def _acceptance_table_rows(requirement):
+    """Read acceptance criteria from flattened DOCX/PDF tables when present."""
+    lines = requirement.splitlines()
+    header = next((i for i, line in enumerate(lines)
+                   if "acceptance criterion" in line.casefold()
+                   and "verified by" in line.casefold()), None)
+    if header is None:
+        return []
+    criteria = []
+    for line in lines[header + 1:]:
+        low = line.casefold()
+        if any(marker in low for marker in ("name & designation", "name and designation")):
+            break
+        cells = [cell.strip() for cell in line.split("|")]
+        if len(cells) < 3 or not cells[0].isdigit():
+            continue
+        criterion = re.sub(r"\s+", " ", cells[1]).strip()
+        if criterion:
+            criteria.append(criterion)
+    return list(dict.fromkeys(criteria))
+
+
+def _combine_explicit_shared_areas(requirement, sections):
+    """Merge one shared source checklist when it explicitly names two products."""
+    raw = requirement.casefold()
+    pairs = [
+        ("Zoho Marketing Automation", "Zoho Campaigns",
+         bool(re.search(r"zoho\s+marketing\s+automation\s*[,/&]+\s*(?:zoho\s+)?campaign", raw))),
+        ("Zoho Creator", "Zoho Backstage",
+         bool(re.search(r"zoho\s+creator\s*[,/&]+\s*(?:zoho\s+)?backstage", raw))),
+    ]
+    combined, consumed = [], set()
+    for section in sections:
+        product = str(section.get("product") or "").strip()
+        if product in consumed:
+            continue
+        shared_pair = next((pair for pair in pairs if pair[2] and product in pair[:2]), None)
+        if shared_pair:
+            names = shared_pair[:2]
+            peers = [row for row in sections if row.get("product") in names]
+            values = [list(dict.fromkeys(str(item).strip() for item in peer.get("requirements", [])
+                                        if str(item).strip())) for peer in peers]
+            if len(peers) == 2 and values[0] == values[1]:
+                combined.append({"product": " & ".join(names), "requirements": values[0]})
+                consumed.update(names)
+                continue
+        combined.append(section)
+    return combined
+
+
 def _draft_brief(sections, answers, fallback_summary):
     """Dedicated BRD-agent pass: explain groupings without creating new scope."""
     try:
@@ -122,37 +172,14 @@ def build_document(requirement, analysis, answers, source_name=""):
         if not isinstance(answer, str) or not answer.strip() or len(answer) > 4000:
             raise ValueError("Enter each answer (up to 4000 characters).")
 
-    sections = analysis.get("requirement_sections") or []
+    sections = _combine_explicit_shared_areas(
+        requirement, analysis.get("requirement_sections") or [])
     requirements = _section_items(sections)
     brief = _draft_brief(sections, answers, str(analysis.get("summary") or "").strip())
     activities = []
-    raw_text = requirement.casefold()
-    shared_pairs = [
-        (("Zoho Marketing Automation", "Zoho Campaigns"),
-         bool(re.search(r"zoho\s+marketing\s+automation\s*[,/&]\s*campaign", raw_text))),
-        (("Zoho Creator", "Zoho Backstage"),
-         bool(re.search(r"zoho\s+creator\s*[,/&]\s*backstage", raw_text))),
-    ]
-    consumed = set()
     for section in sections:
         product = str(section.get("product") or "").strip()
         items = list(dict.fromkeys(str(x).strip() for x in section.get("requirements", []) if str(x).strip()))
-        if product in consumed:
-            continue
-        for pair, explicitly_shared in shared_pairs:
-            if explicitly_shared and product in pair:
-                peers = [x for x in sections if x.get("product") in pair]
-                shared = list(dict.fromkeys(
-                    str(item).strip() for peer in peers for item in peer.get("requirements", [])
-                    if str(item).strip()))
-                if len(peers) > 1 and all(
-                    list(dict.fromkeys(str(i).strip() for i in peer.get("requirements", []) if str(i).strip())) == shared
-                    for peer in peers
-                ):
-                    product = " & ".join(pair)
-                    items = shared
-                    consumed.update(pair)
-                    break
         if items:
             activities.append({"area": product, "items": items})
 
@@ -168,7 +195,8 @@ def build_document(requirement, analysis, answers, source_name=""):
     current_state = _source_list(requirement, "Current State Summary", ["Business Objectives", "Scope"])
     stakeholders = _source_list(requirement, "Target Audience", ["Current State Summary", "Business Objectives"])
     acceptance_criteria = (_source_list(requirement, "Go-Live Acceptance Criteria", ["Document Sign-Off"])
-                           or _source_list(requirement, "Acceptance Criteria", ["Document Sign-Off"]))
+                           or _source_list(requirement, "Acceptance Criteria", ["Document Sign-Off"])
+                           or _acceptance_table_rows(requirement))
     # Use the reviewed, source-filtered checklist as the authority for every product.
     areas = [{"name": row["area"], "requirements": row["items"]} for row in activities]
     open_decisions = []
@@ -209,10 +237,10 @@ def build_document(requirement, analysis, answers, source_name=""):
         # These are tagged copies of source requirements, never newly authored
         # requirements. Rendering skips a category if it has no matching item.
         "business_rules": matches("rule", "duplicate", "same company", "approval", "mandatory", "validation", "billable / non-billable", "planned vs actual"),
-        "data_requirements": matches("data", "record", "field", "duplicate", "contact", "lead", "company", "event-wise", "batch-wise", "timesheet", "work notes", "master"),
-        "integration_requirements": matches("integration", "integrat", "whatsapp", "sms", "crm integration"),
+        "data_requirements": matches("data", "record", "field", "duplicate", "event-wise", "batch-wise", "timesheet", "work notes", "master", "migration", "cleansing"),
+        "integration_requirements": matches("integration", "integrat"),
         "reporting_requirements": matches("report", "dashboard", "analytics", "metric", "kpi"),
-        "access_requirements": matches("role", "permission", "access", "assignment", "assigned", "security"),
+        "access_requirements": matches("role", "permission", "access", "security"),
         "requirements_by_area": requirements_by_area,
         "training_requirements": next((x["items"] for x in activities if x["area"].casefold() == "training"), []),
         "commercial_categories": analysis.get("commercial_categories") or [],
@@ -262,6 +290,15 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
             out.append(f"<tr><td>{_e(row['id'])}</td><td>{_e(row['area'])}</td><td>{_e(row['requirement'])}</td></tr>")
         out.append("</tbody></table>")
 
+    def reference_table(rows):
+        out.append("<table><thead><tr><th>Business area</th><th>Requirement IDs</th></tr></thead><tbody>")
+        for group in rows:
+            ids = [row["id"] for row in doc["requirements"]
+                   if row["area"] == group["area"] and row["requirement"] in group["items"]]
+            if ids:
+                out.append(f"<tr><td>{_e(group['area'])}</td><td>{_e(', '.join(ids))}</td></tr>")
+        out.append("</tbody></table>")
+
     section("Project Overview")
     out.append(f"<p>{_e(doc['summary'])}</p>")
     if doc["objectives"]:
@@ -286,20 +323,16 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
             out.append(f"<p class='muted'>Requirements: {_e(', '.join(view['requirement_ids']))}</p>")
     section("Functional Requirements")
     out.append("<p>Requirement statements are based on the submitted request. IDs can be used during review and implementation.</p>")
-    list_table(doc["requirements"])
-    supplemental = (("Business Rules", "business_rules"),
-                    ("Data Requirements", "data_requirements"),
-                    ("Integrations", "integration_requirements"),
-                    ("Reports and Analytics", "reporting_requirements"),
-                    ("Roles, Access and Security", "access_requirements"))
-    for title, key in supplemental:
-        rows = [item for group in doc[key] for item in group["items"]]
-        if rows:
+    list_table([row for row in doc["requirements"] if row["area"].casefold() != "training"])
+    for title, key in (("Business Rules", "business_rules"), ("Data Requirements", "data_requirements"),
+                       ("Integrations", "integration_requirements"), ("Reports and Analytics", "reporting_requirements"),
+                       ("Roles, Access and Security", "access_requirements")):
+        if doc[key]:
             section(title)
-            out.append("<ul>" + "".join(f"<li>{_e(item)}</li>" for item in rows) + "</ul>")
+            reference_table(doc[key])
     if doc["training_requirements"]:
         section("Training")
-        out.append("<ul>" + "".join(f"<li>{_e(x)}</li>" for x in doc["training_requirements"]) + "</ul>")
+        list_table([row for row in doc["requirements"] if row["area"].casefold() == "training"], "Training requirement")
     if doc["commercial_categories"]:
         section("Commercial Items Requested")
         out.append("<p>Pricing was requested for the following items. No amounts have been added.</p><ul>")
@@ -399,23 +432,36 @@ def build_docx(doc, output):
             report.add_paragraph("Requirements: " + ", ".join(view["requirement_ids"]))
     heading("Functional Requirements")
     report.add_paragraph("Requirement statements below preserve the reviewed request. Each BRD ID can be used to discuss scope and record approval.")
-    table = report.add_table(rows=1, cols=3)
-    table.style = "Table Grid"
-    for cell, label in zip(table.rows[0].cells, ("ID", "Business area", "Requirement")):
-        cell.text = label
-    for row in doc["requirements"]:
-        cells = table.add_row().cells
-        cells[0].text, cells[1].text, cells[2].text = row["id"], row["area"], row["requirement"]
+    def requirement_table(rows, third_label="Requirement"):
+        table = report.add_table(rows=1, cols=3)
+        table.style = "Table Grid"
+        for cell, label in zip(table.rows[0].cells, ("ID", "Business area", third_label)):
+            cell.text = label
+        for row in rows:
+            cells = table.add_row().cells
+            cells[0].text, cells[1].text, cells[2].text = row["id"], row["area"], row["requirement"]
+
+    def reference_table(rows):
+        table = report.add_table(rows=1, cols=2)
+        table.style = "Table Grid"
+        table.rows[0].cells[0].text, table.rows[0].cells[1].text = "Business area", "Requirement IDs"
+        for group in rows:
+            ids = [row["id"] for row in doc["requirements"]
+                   if row["area"] == group["area"] and row["requirement"] in group["items"]]
+            if ids:
+                cells = table.add_row().cells
+                cells[0].text, cells[1].text = group["area"], ", ".join(ids)
+
+    requirement_table([row for row in doc["requirements"] if row["area"].casefold() != "training"])
     for title, key in (("Business Rules", "business_rules"), ("Data Requirements", "data_requirements"),
                        ("Integrations", "integration_requirements"), ("Reports and Analytics", "reporting_requirements"),
                        ("Roles, Access and Security", "access_requirements")):
-        items = [item for group in doc[key] for item in group["items"]]
-        if items:
+        if doc[key]:
             heading(title)
-            bullets(items)
+            reference_table(doc[key])
     if doc["training_requirements"]:
         heading("Training")
-        bullets(doc["training_requirements"])
+        requirement_table([row for row in doc["requirements"] if row["area"].casefold() == "training"], "Training requirement")
     if doc["commercial_categories"]:
         heading("Commercial Items Requested")
         report.add_paragraph("Pricing was requested for the following items. No amounts have been added.")

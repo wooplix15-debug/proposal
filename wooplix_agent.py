@@ -315,7 +315,7 @@ Use plain English and return ONLY valid JSON.'''
 
     last = {}
     for api_key, model_name in combos:
-        client = Groq(api_key=api_key, timeout=90, max_retries=1)
+        client = Groq(api_key=api_key, timeout=90, max_retries=0)
         for attempt in range(2):
             try:
                 # Try json_object format first; on retry try without strict json_object format (parse_json_safely extracts it)
@@ -342,9 +342,8 @@ Use plain English and return ONLY valid JSON.'''
                         continue
                     last["status"] = "DRAFT"
                     return last
-            except RateLimitError as exc:
-                key_hint = api_key[:12] + '…'
-                print(f"Groq RateLimitError key={key_hint} model={model_name} — trying next.", flush=True)
+            except RateLimitError:
+                print(f"Groq rate limit for {model_name} — trying next key or model.", flush=True)
                 break  # move to next (key, model) combo
             except Exception as exc:
                 print(f"Groq generation attempt {attempt + 1} with {model_name} failed: {type(exc).__name__}", flush=True)

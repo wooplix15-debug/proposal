@@ -41,12 +41,11 @@ def _groq_call_with_fallback(**kwargs):
         else:
             call_kwargs.pop('reasoning_effort', None)
         for api_key in api_keys:
-            groq_client = Groq(api_key=api_key, timeout=90, max_retries=1)
+            groq_client = Groq(api_key=api_key, timeout=90, max_retries=0)
             try:
                 return groq_client.chat.completions.create(**call_kwargs)
-            except RateLimitError as exc:
-                key_hint = api_key[:12] + '…'
-                print(f"[workflow] RateLimitError key={key_hint} model={model_name} — trying next.", flush=True)
+            except RateLimitError:
+                print(f"[workflow] Rate limit for {model_name} — trying next key or model.", flush=True)
                 last_exc = exc
                 continue
             except Exception:
