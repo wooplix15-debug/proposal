@@ -7,7 +7,7 @@ from docx import Document
 
 import business_requirements_agent as brd
 import wooplix_agent as brand
-from brd_structure import source_tables, validated_model_tables
+from brd_structure import source_tables, validated_model_tables, proposed_design_tables
 from project_records import load_project_records
 from proposal_scope import preserve_source_bullets, requested_products
 
@@ -70,12 +70,24 @@ class BusinessRequirementsAgentTests(unittest.TestCase):
         self.assertNotIn("No specific requirements were stated", text)
         self.assertNotIn("Training requirements were not specified", text)
 
-    def test_html_keeps_open_question_and_requested_costs(self):
+    def test_html_keeps_open_question_without_mixing_in_proposal_prices(self):
         doc = self.build()
         html = brd.build_html(doc)
         self.assertIn("Questions and Decisions", html)
         self.assertIn("To be confirmed", html)
-        self.assertIn("Commercial Items Requested", html)
+        self.assertNotIn("Commercial Items Requested", html)
+
+    def test_proposed_tables_are_labelled_and_unrelated_scope_is_filtered(self):
+        requirements = [{"id": "BR-001", "area": "Zoho CRM",
+                         "requirement": "Lead automatic creation and BDM assignment"}]
+        raw = [{"section": "Fields and Master Data", "title": "Lead data",
+                "columns": ["Field", "Purpose"],
+                "rows": [["Lead source", "Record origin"],
+                         ["Event budget", "Track event spending"]],
+                "requirement_ids": ["BR-001"]}]
+        tables = proposed_design_tables(raw, requirements, "Cost proposal requested")
+        self.assertEqual(tables[0]["rows"], [["Lead source", "Record origin"]])
+        self.assertEqual(tables[0]["origin"], "proposed")
 
     def test_acceptance_criteria_are_read_from_flattened_document_table(self):
         text = "Project heading\n9.2 Document Sign-Off\n# | Acceptance Criterion | Verified By | Status\n"

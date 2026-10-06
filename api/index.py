@@ -179,6 +179,10 @@ async def generate(request: Request, reviews: str = Form(...)):
             prepared.append((req, context['source'], reference, context['analysis'], row.get('answers', {})))
     except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        # A detailed BRD must not silently fall back to a shallow checklist if
+        # the analysis service is temporarily unavailable.
+        raise HTTPException(503, str(exc)) from exc
 
     host = request.headers.get("x-forwarded-host") or request.headers.get("host")
     requested_format = (request.query_params.get("format") or "auto").lower()

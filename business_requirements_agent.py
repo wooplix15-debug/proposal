@@ -8,12 +8,13 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import wooplix_agent as brand
-from brd_structure import SPECIFICATION_SECTIONS, source_tables, statement_tables, validated_model_tables
+from brd_structure import SPECIFICATION_SECTIONS, source_tables, statement_tables, proposed_design_tables
 
 
 def _section_items(sections):
@@ -104,87 +105,163 @@ def _combine_explicit_shared_areas(requirement, sections):
     return combined
 
 
-def _draft_brief(sections, answers, fallback_summary):
-    """Dedicated BRD-agent pass: explain groupings without creating new scope."""
-    try:
-        from groq import Groq, RateLimitError
+def _groq_json(system, payload, max_tokens=6500):
+    """Run one structured BRD analysis pass, trying configured keys and models."""
+    from groq import Groq, RateLimitError
 
-        system = """You are Wooplix's Business Requirements Document agent. This is a
-separate requirements-analysis workflow, not the proposal writer. Use only the
-reviewed requirement checklist and user answers supplied below. Do not use external
-product knowledge. Do not add features, software products, integrations, roles,
-workflows, rules, metrics or commitments. Preserve uncertainty as uncertainty.
-The answers input includes the complete original document and the question text
-with each reviewed answer. Read those details, including tables and scope boundaries.
-Produce a detailed BRD specification, not merely a summary checklist. Cover only
-relevant sections: application responsibilities, stakeholders, business process,
-fields/master data, workflows/business rules, roles/access, reports/dashboards,
-integrations, notifications, scope boundaries and acceptance criteria.
-Keep future/optional/excluded items explicitly qualified. Never turn a suggestion
-or feasibility condition into an agreed commitment. Do not copy sample client scope.
-In specification table cells use EXACT excerpts from the source or reviewed answers,
-existing BR IDs, or 'To be confirmed'. Never invent field types, mandatory flags,
-thresholds, report formulas, permissions, owners, integrations or sequences.
-Provide an evidence array with one exact source excerpt per table row. All factual
-cells in that row must occur within that excerpt. Keep the original relationships
-between fields and values; do not join unrelated facts from different modules.
-Do not reproduce tables already supplied in the source; they will be preserved.
-Return JSON with one concise factual overview, specification_tables and process_views. Each process_view
-must use an exact existing business-area heading and include only a short explanation
-of activities explicitly listed for that area. Add requirement_ids from the exact
-IDs supplied. Cross-application relationships can be described only when an explicit
-requirement states them. If the source does not define a sequence, do not make one.
-Schema: {"overview":"", "process_views":[{"area":"","description":"",
-"requirement_ids":["BR-001"]}], "specification_tables":[{"section":"Fields and Master Data",
-"title":"Lead fields", "columns":["Field","Required","Mapping"],
-"rows":[["EXACT SOURCE EXCERPT","To be confirmed","EXACT SOURCE EXCERPT"]],
-"evidence":["Exact contiguous source passage supporting this row"]}]}.
-Valid section names: """ + ", ".join(SPECIFICATION_SECTIONS)
-        user = json.dumps({"requirements": [
-            {"id": item["id"], "area": item["area"], "statement": item["requirement"]}
-            for item in _section_items(sections)],
-            "answers": answers}, ensure_ascii=False)
-        models = list(dict.fromkeys([brand.GROQ_MODEL, "openai/gpt-oss-120b",
-                                     "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]))
-        keys = brand.GROQ_API_KEYS or ([brand.GROQ_API_KEY] if brand.GROQ_API_KEY else [])
-        for model in models:
-            for key in keys:
-                try:
-                    kwargs = {"model": model,
-                              "messages": [{"role": "system", "content": system},
-                                           {"role": "user", "content": user}],
-                              "temperature": 0.1, "max_completion_tokens": 6500,
-                              "response_format": {"type": "json_object"}}
-                    if "gpt-oss" in model:
-                        kwargs["reasoning_effort"] = "low"
-                    response = Groq(api_key=key, timeout=45, max_retries=0).chat.completions.create(**kwargs)
-                    text = response.choices[0].message.content or "{}"
-                    data = json.loads(text)
-                    by_area = {}
-                    for item in _section_items(sections):
-                        by_area.setdefault(item["area"], set()).add(item["id"])
-                    views = []
-                    for view in data.get("process_views", []):
-                        area = str(view.get("area", "")).strip()
-                        ids = view.get("requirement_ids", [])
-                        if (area in by_area and isinstance(ids, list) and ids
-                                and set(ids) <= by_area[area]):
-                            views.append({"area": area,
-                                          "description": str(view.get("description", ""))[:700],
-                                          "requirement_ids": ids})
-                    source = answers.get("source_requirement", "") if isinstance(answers, dict) else ""
-                    source += "\n" + json.dumps(answers.get("decisions", []), ensure_ascii=False)
-                    return {"overview": str(data.get("overview") or fallback_summary)[:1600],
-                            "process_views": views,
-                            "specification_tables": validated_model_tables(
-                                data.get("specification_tables", []), source, _section_items(sections))}
-                except RateLimitError:
-                    break
-                except Exception:
-                    continue
-    except Exception:
-        pass
-    return {"overview": fallback_summary, "process_views": []}
+    keys = brand.GROQ_API_KEYS or ([brand.GROQ_API_KEY] if brand.GROQ_API_KEY else [])
+    if not keys:
+        raise RuntimeError("The BRD agent needs a configured Groq API key.")
+    models = list(dict.fromkeys([brand.GROQ_MODEL, "openai/gpt-oss-120b",
+                                 "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]))
+    last_error = None
+    for model in models:
+        for key in keys:
+            try:
+                kwargs = {"model": model,
+                          "messages": [{"role": "system", "content": system},
+                                       {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
+                          "temperature": 0.1, "max_completion_tokens": max_tokens,
+                          "response_format": {"type": "json_object"}}
+                if "gpt-oss" in model:
+                    kwargs["reasoning_effort"] = "low"
+                response = Groq(api_key=key, timeout=55, max_retries=0).chat.completions.create(**kwargs)
+                data = json.loads(response.choices[0].message.content or "{}")
+                if isinstance(data, list):
+                    data = {"specification_tables": data}
+                if not isinstance(data, dict):
+                    raise ValueError("The model did not return a JSON object")
+                return data
+            except RateLimitError as exc:
+                last_error = exc
+                match = re.search(r"try again in ([\d.]+)s", str(exc), re.I)
+                if match:
+                    time.sleep(min(float(match.group(1)) + 1, 20))
+                break
+            except Exception as exc:
+                last_error = exc
+    raise RuntimeError("The BRD agent could not complete its analysis. Please try again.") from last_error
+
+
+def _draft_brief(sections, answers, fallback_summary):
+    """Analyze scope, then develop each module into reviewable BRD specifications."""
+    requirements = _section_items(sections)
+    source = answers.get("source_requirement", "")
+    context = {"original_requirement": source, "reviewed_answers": answers.get("decisions", []),
+               "requirements": requirements}
+    common = """You are Wooplix's dedicated BRD analyst. Produce a client-facing business
+requirements document at the level of a detailed implementation BRD. Analyze the
+actual project; never import facts from example clients. The original requirement
+and reviewed answers are authoritative. A useful BRD expands a short requirement
+into reviewable field definitions, business processes, rules, access, reports,
+integrations and alerts where relevant. Distinguish explicit facts from a proposed
+working design: propose reasonable details only within the requested capability.
+Unknown mandatory flags, owners, thresholds, formulas, mappings, schedules and
+recipients must say 'To be confirmed'. Never invent numeric targets, prices,
+contractual commitments, software products or unrelated features. Preserve the
+client's named products and scope boundaries. Write clear, specific business English.
+Return valid JSON only. Internal requirement IDs are for traceability; never put
+them in titles, cells, or visible text. """
+    overview_data = _groq_json(common + """Write an overview (100-180 words), a concise
+business objective for every exact area, and cross-application tables only where
+supported by the requirements. Schema: {"overview":"...",
+"process_views":[{"area":"exact area", "description":"2-3 specific sentences",
+"requirement_ids":["BR-001"]}], "specification_tables":[{"section":"Application Responsibilities",
+"title":"Application responsibilities", "columns":["Application","Purpose","Key functions"],
+"rows":[["...","...","..."]], "requirement_ids":["BR-001"]}]}.
+Use Application Responsibilities, Objectives and Outcomes, Business Process and
+Stakeholders as relevant. An outcome may be proposed but must not imply a measured
+result. For process steps, make the sequence conditional when the client has not
+confirmed it. Include one row per relevant application or business process stage.
+Items requested only as cost categories are commercial questions, not delivery scope.
+Avoid claims that implementation or support will be delivered when the client asks
+only for their price. Do not describe the system as complete or guaranteed.
+""", context, 6500)
+    by_area = {}
+    for item in requirements:
+        by_area.setdefault(item["area"], set()).add(item["id"])
+    views = []
+    for view in overview_data.get("process_views", []):
+        if not isinstance(view, dict):
+            continue
+        area, ids = str(view.get("area", "")).strip(), view.get("requirement_ids", [])
+        if area in by_area and isinstance(ids, list) and ids and all(
+                isinstance(x, str) and x in by_area[area] for x in ids):
+            views.append({"area": area, "description": str(view.get("description", ""))[:900],
+                          "requirement_ids": ids})
+    tables = proposed_design_tables(overview_data.get("specification_tables", []), requirements, source)
+    # Separate passes keep every product in view instead of letting early products
+    # consume the model's output budget.
+    substantive = [section for section in sections if section.get("requirements")
+                   and str(section.get("product", "")).casefold() != "training"]
+    for offset in range(0, len(substantive), 2):
+        area_names = {row["product"] for row in substantive[offset:offset + 2]}
+        area_requirements = [row for row in requirements if row["area"] in area_names]
+        detail_data = _groq_json(common + """For ONLY the supplied business areas, create
+substantive specification tables derived from their requirements. Do not just restate
+the checklist. Give enough detail that stakeholders can review how each requested
+capability would work. Use only relevant table types:
+- Fields and Master Data: entity/field, suggested type or format, mandatory status,
+  purpose/mapping. Suggest sensible field names when a form or record is requested;
+  unknown type/mandatory/mapping must be 'To be confirmed'.
+- Workflows and Business Rules: trigger, condition, action, exception or decision.
+- Roles and Access: role, record access, permitted action; unknown role names =
+  'To be confirmed'.
+- Reports and Dashboards: KPI/widget, definition, data source, frequency/owner;
+  unknown formulas and owners = 'To be confirmed'.
+- Integrations: source, target, data exchanged, trigger or direction; only connect
+  products explicitly requested to be integrated.
+- Notifications: event/trigger, recipient, channel, content; unknowns =
+  'To be confirmed'. Do not invent a message template.
+- Business Process: step, actor, action, output; proposed order is explicitly
+  labelled as proposed, never as agreed.
+Do not include sections unsupported by these areas. Include several meaningful
+rows per applicable table and cover every substantive requirement in this group.
+Prefer 3-8 rows per table. Use exact section names from: """ +
+            ", ".join(SPECIFICATION_SECTIONS) + """.
+Return {"specification_tables":[{"section":"Fields and Master Data",
+"title":"Zoho CRM lead and account data", "columns":["Field","Type / format",
+"Mandatory","Purpose"], "rows":[["...","...","To be confirmed","..."]],
+"requirement_ids":["BR-001"]}]}.
+Each table's requirement_ids must contain IDs supplied in this call. Proposed
+details must be reviewable, specific, and restricted to the client's capability.
+""", {"business_areas": list(area_names), "requirements": area_requirements,
+                  "original_requirement": source, "reviewed_answers": answers.get("decisions", [])}, 8500)
+        tables.extend(proposed_design_tables(detail_data.get("specification_tables", []),
+                                             area_requirements, source))
+        for area in area_names:
+            area_ids = {r["id"] for r in area_requirements if r["area"] == area}
+            area_tables = [table for table in tables
+                           if set(table.get("requirement_ids", [])) & area_ids
+                           and table["section"] != "Application Responsibilities"]
+            if len(area_tables) >= 3 or (area.casefold() == "training" and area_tables):
+                continue
+            focused = [r for r in area_requirements if r["area"] == area]
+            retry = _groq_json(common + """Develop this ONE missing business area into
+specific, reviewable specification tables. Cover its requested capabilities.
+Use relevant sections among Fields and Master Data, Workflows and Business Rules,
+Roles and Access, Reports and Dashboards, Integrations, Notifications, Business
+Process. Return {"specification_tables":[{"section":"...","title":"...",
+"columns":["...","..."],"rows":[["...","..."]],
+"requirement_ids":["BR-001"]}]}. Use only supplied IDs and source scope;
+mark all unconfirmed values 'To be confirmed'.""",
+                               {"business_area": area, "requirements": focused,
+                                "original_requirement": source,
+                                "reviewed_answers": answers.get("decisions", [])}, 5000)
+            tables.extend(proposed_design_tables(retry.get("specification_tables", []), focused, source))
+            refined = [t for t in tables if set(t.get("requirement_ids", [])) & area_ids
+                       and t["section"] != "Application Responsibilities"]
+            if not refined:
+                raise RuntimeError(f"The BRD agent did not develop {area}. Please try again.")
+    if requirements and not tables:
+        raise RuntimeError("The BRD analysis returned no usable detail. Please try again.")
+    overview = str(overview_data.get("overview") or fallback_summary)[:1800]
+    scope_text = " ".join(r["requirement"] for r in requirements).casefold()
+    overview = " ".join(sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", overview)
+                        if not any(term in sentence.casefold() and term not in scope_text
+                                   for term in ("post-implementation support", "data migration")))
+    return {"overview": overview or fallback_summary,
+            "process_views": views, "specification_tables": tables}
 
 
 def build_document(requirement, analysis, answers, source_name=""):
@@ -219,17 +296,59 @@ def build_document(requirement, analysis, answers, source_name=""):
                                   "decisions": decisions},
                          str(analysis.get("summary") or "").strip())
     specifications = source_tables(requirement)
-    # Source tables are authoritative. Model tables supplement uncovered
-    # categories, rather than duplicating or replacing supplied definitions.
+    # Preserve source definitions and add distinct proposed detail even when
+    # both concern the same category (for example, two different forms).
     source_categories = {table["section"] for table in specifications}
     specifications += statement_tables(requirements, source_categories)
-    source_categories.update(table["section"] for table in specifications)
-    specifications += [table for table in brief.get("specification_tables", [])
-                       if table["section"] not in source_categories]
+    existing = {(table["section"].casefold(), table["title"].casefold())
+                for table in specifications}
+    for table in brief.get("specification_tables", []):
+        key = (table["section"].casefold(), table["title"].casefold())
+        if key not in existing:
+            specifications.append(table)
+            existing.add(key)
+    marketing = next((section for section in sections
+                      if "marketing automation" in str(section.get("product", "")).casefold()), None)
+    if marketing:
+        requested = " ".join(str(item) for item in marketing.get("requirements", [])).casefold()
+        drafted = " ".join(str(value) for table in specifications
+                           if table.get("origin") == "proposed"
+                           for row in table.get("rows", []) for value in row).casefold()
+        missing = []
+        if "journey" in requested and "journey" not in drafted:
+            missing.append(["Marketing journey", "To be confirmed",
+                            "Run the approved campaign sequence for the selected audience",
+                            "To be confirmed"])
+        if "follow-up automation" in requested and "follow-up" not in drafted:
+            missing.append(["Follow-up automation", "To be confirmed",
+                            "Create the agreed follow-up action after a campaign interaction",
+                            "To be confirmed"])
+        if missing:
+            specifications.append({"section": "Workflows and Business Rules",
+                                   "title": "Marketing journey and follow-up design",
+                                   "columns": ["Capability", "Entry / trigger", "Proposed action", "Exit / exception"],
+                                   "rows": missing, "origin": "proposed"})
     if boundaries:
         specifications.append({"section": "Scope Boundaries", "title": "Qualified scope",
                                "columns": ["Business area", "Source condition"],
                                "rows": boundaries, "origin": "source"})
+    training_items = next((list(section.get("requirements", [])) for section in sections
+                           if str(section.get("product", "")).casefold() == "training"), [])
+    if training_items:
+        plan_rows = []
+        for item in training_items:
+            name = str(item).strip()
+            matched = [str(detail) for area in sections if area.get("product", "").casefold() != "training"
+                       and (name.casefold() in area.get("product", "").casefold()
+                            or (name.casefold() == "automation and reports" and
+                                any(term in area.get("product", "").casefold()
+                                    for term in ("analytics", "projects", "crm"))))
+                       for detail in area.get("requirements", [])]
+            focus = "; ".join(matched[:4]) if matched else "Practical use of the requested application"
+            plan_rows.append([name, focus, "To be confirmed", "To be confirmed"])
+        specifications.append({"section": "Training Plan", "title": "Practical training plan",
+                               "columns": ["Application", "Practical focus", "Participants", "Duration"],
+                               "rows": plan_rows, "origin": "proposed"})
     activities = []
     for section in sections:
         product = str(section.get("product") or "").strip()
@@ -264,7 +383,7 @@ def build_document(requirement, analysis, answers, source_name=""):
             open_decisions.append({"question": question["question"], "answer": answer})
 
     requirements_by_area = [{"name": name} for name in dict.fromkeys(
-        row["area"] for row in requirements)]
+        row["area"] for row in requirements) if name.casefold() != "training"]
 
     return {
         "title": "Business Requirements Document",
@@ -334,6 +453,7 @@ body {{ font-family:'DejaVu Sans',sans-serif; font-size:9pt; line-height:1.45; c
 .footer {{position:fixed;bottom:-8mm;width:100%;border-top:1px solid #cbd5e1;font-size:7pt;color:#64748b}}
 .footer td {{padding-top:3mm}} h1 {{font-size:19pt;color:#002b49;margin:12mm 0 8mm}}
 h2 {{page-break-after:avoid;background:#1a365d;color:#fff;font-size:11pt;padding:7px 10px;margin:18px 0 8px}}
+h2.training {{page-break-before:always}}
 h3 {{page-break-after:avoid;color:#008080;font-size:10pt;border-bottom:1px solid #008080;padding-bottom:3px;margin:13px 0 5px}}
 p {{margin:4px 0 8px}} table {{width:100%;border-collapse:collapse;margin:6px 0 12px;font-size:8.5pt}}
 thead {{display:table-header-group}} tr {{page-break-inside:avoid}} th {{background:#1a365d;color:white;text-align:left;font-size:8pt;padding:6px;border:1px solid #1a365d}}
@@ -353,7 +473,8 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
     def section(title):
         nonlocal chapter_number
         chapter_number += 1
-        out.append(f"<h2>{chapter_number}. {_e(title)}</h2>")
+        css_class = " class='training'" if title == "Training Requirements" else ""
+        out.append(f"<h2{css_class}>{chapter_number}. {_e(title)}</h2>")
 
     def list_table(rows, first="Requirement"):
         out.append(f"<table><thead><tr><th style='width:8%'>No.</th><th>{_e(first)}</th></tr></thead><tbody>")
@@ -370,7 +491,8 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
                                {"id", "brd id", "requirement id", "requirement ids", "traceability id"}]
             if not visible_columns:
                 continue
-            out.append(f"<h3>{_e(table['title'])}</h3><table><thead><tr>")
+            qualifier = " <span class='muted'>(Proposed for review)</span>" if table.get("origin") == "proposed" else ""
+            out.append(f"<h3>{_e(table['title'])}{qualifier}</h3><table><thead><tr>")
             out.extend(f"<th>{_e(table['columns'][i])}</th>" for i in visible_columns)
             out.append("</tr></thead><tbody>")
             for row in table["rows"]:
@@ -383,7 +505,7 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
     if doc.get("purpose"):
         section("Purpose")
         out.append("<ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["purpose"]) + "</ul>")
-    if doc["current_state"] or doc["objectives"] or doc["stakeholders"]:
+    if doc["current_state"] or doc["objectives"] or doc["stakeholders"] or _specs_for(doc, {"Objectives and Outcomes"}):
         section("Business Context & Objectives")
     if doc["current_state"]:
         out.append("<h3>Current State</h3><ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["current_state"]) + "</ul>")
@@ -391,6 +513,7 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
         out.append("<h3>Business Objectives</h3><ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["objectives"]) + "</ul>")
     if doc["stakeholders"]:
         out.append("<h3>Stakeholders</h3><ul>" + "".join(f"<li>{_e(item)}</li>" for item in doc["stakeholders"]) + "</ul>")
+    specification_tables("Objectives and Outcomes")
     section("Project Scope")
     out.append("<ul>")
     scope_values = doc.get("scope_items") or [area["name"] for area in doc["requirements_by_area"]]
@@ -447,7 +570,10 @@ td {{padding:5px 7px;vertical-align:top;border:1px solid #cbd5e1}} tbody tr:nth-
         specification_tables("Stakeholders")
     if doc["training_requirements"]:
         section("Training Requirements")
-        list_table([row for row in doc["requirements"] if row["area"].casefold() == "training"], "Training requirement")
+        if _specs_for(doc, {"Training Plan"}):
+            specification_tables("Training Plan")
+        else:
+            list_table([row for row in doc["requirements"] if row["area"].casefold() == "training"], "Training requirement")
     if doc["open_decisions"]:
         section("Questions and Decisions")
         out.append("<table><thead><tr><th>Question</th><th>Answer or status</th></tr></thead><tbody>")
@@ -523,7 +649,10 @@ def build_docx(doc, output):
         tables = [table for table in doc.get("specification_tables", [])
                   if table["section"] == category]
         for spec in tables:
-            report.add_heading(_plain(spec["title"]), level=2)
+            title = _plain(spec["title"])
+            if spec.get("origin") == "proposed":
+                title += " (Proposed for review)"
+            report.add_heading(title, level=2)
             visible_columns = [i for i, name in enumerate(spec["columns"])
                                if str(name).strip().casefold() not in
                                {"id", "brd id", "requirement id", "requirement ids", "traceability id"}]
@@ -543,7 +672,7 @@ def build_docx(doc, output):
     if doc.get("purpose"):
         heading("Purpose")
         bullets([_plain(item) for item in doc["purpose"]])
-    if doc["current_state"] or doc["objectives"] or doc["stakeholders"]:
+    if doc["current_state"] or doc["objectives"] or doc["stakeholders"] or _specs_for(doc, {"Objectives and Outcomes"}):
         heading("Business Context & Objectives")
     if doc["current_state"]:
         report.add_heading("Current State", level=2)
@@ -554,6 +683,7 @@ def build_docx(doc, output):
     if doc["stakeholders"]:
         report.add_heading("Stakeholders", level=2)
         bullets([_plain(item) for item in doc["stakeholders"]])
+    specification_tables("Objectives and Outcomes")
     heading("Project Scope")
     scope_values = doc.get("scope_items") or [area["name"] for area in doc["requirements_by_area"]]
     bullets([_plain(item) for item in scope_values])
@@ -610,14 +740,18 @@ def build_docx(doc, output):
         specification_tables("Stakeholders")
 
     if doc["training_requirements"]:
-        heading("Training Requirements")
-        rows = [row for row in doc["requirements"] if row["area"].casefold() == "training"]
-        table = report.add_table(rows=1, cols=2)
-        table.style = "Table Grid"
-        table.rows[0].cells[0].text, table.rows[0].cells[1].text = "No.", "Training Requirement"
-        for number, row in enumerate(rows, 1):
-            cells = table.add_row().cells
-            cells[0].text, cells[1].text = str(number), _plain(row["requirement"])
+        training_heading = heading("Training Requirements")
+        training_heading.paragraph_format.page_break_before = True
+        if _specs_for(doc, {"Training Plan"}):
+            specification_tables("Training Plan")
+        else:
+            rows = [row for row in doc["requirements"] if row["area"].casefold() == "training"]
+            table = report.add_table(rows=1, cols=2)
+            table.style = "Table Grid"
+            table.rows[0].cells[0].text, table.rows[0].cells[1].text = "No.", "Training Requirement"
+            for number, row in enumerate(rows, 1):
+                cells = table.add_row().cells
+                cells[0].text, cells[1].text = str(number), _plain(row["requirement"])
     if doc["open_decisions"]:
         heading("Questions and Decisions")
         table = report.add_table(rows=1, cols=2)

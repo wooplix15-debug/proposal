@@ -3,10 +3,10 @@ import re
 
 
 SPECIFICATION_SECTIONS = (
-    "Application Responsibilities", "Stakeholders", "Business Process",
+    "Application Responsibilities", "Objectives and Outcomes", "Stakeholders", "Business Process",
     "Fields and Master Data", "Workflows and Business Rules", "Roles and Access",
     "Reports and Dashboards", "Integrations", "Notifications",
-    "Scope Boundaries", "Acceptance Criteria", "Business Details",
+    "Scope Boundaries", "Acceptance Criteria", "Business Details", "Training Plan",
 )
 
 
@@ -22,6 +22,8 @@ def table_category(title, columns):
         return None  # The output has its own approval block.
     if "acceptance criterion" in text or "acceptance criteria" in text:
         return "Acceptance Criteria"
+    if "objective" in headers or "expected outcome" in headers:
+        return "Objectives and Outcomes"
     if "stakeholder" in text:
         return "Stakeholders"
     if "field" in headers or any(x in text for x in ("field name", "data type", "mandatory", "crm mapping", "id format")):
@@ -144,4 +146,63 @@ def validated_model_tables(tables, source, requirements):
                            "title": normalize(table.get("title", table["section"]))[:160],
                            "columns": [normalize(x)[:80] for x in columns],
                            "rows": accepted, "origin": "organized"})
+    return result
+
+
+def proposed_design_tables(tables, requirements, source):
+    """Accept relevant working-design tables; never present them as source facts."""
+    allowed_ids = {row["id"] for row in requirements}
+    area_scope = normalize(" ".join(row["requirement"] for row in requirements)).casefold()
+    excluded = ("ticketing", "speaker management", "onsite delivery", "payment gateway",
+                "lead scoring", "revenue forecast", "survey", "opportunit", "registration",
+                "financial data", "invoice", "inventory", "deal pipeline", "budget",
+                "attendee", "revenue", "expenses", "qr code", "qr scan", "region",
+                "sales pipeline", "etl engineer", "purchase order", "expenditure",
+                "sales target", "data quality threshold", "twilio", "webhook",
+                "finance", "attendance", "engagement score", "campaign roi")
+    result = []
+    if not isinstance(tables, list):
+        return result
+    for item in tables[:40]:
+        if not isinstance(item, dict) or item.get("section") not in SPECIFICATION_SECTIONS:
+            continue
+        if item["section"] in {"Scope Boundaries", "Acceptance Criteria", "Business Details"}:
+            continue
+        refs, columns, rows = item.get("requirement_ids"), item.get("columns"), item.get("rows")
+        if not isinstance(refs, list) or not any(isinstance(ref, str) and ref in allowed_ids for ref in refs):
+            continue
+        if not isinstance(columns, list) or not 2 <= len(columns) <= 6:
+            continue
+        if not isinstance(rows, list):
+            continue
+        headers = [normalize(value)[:80] for value in columns]
+        if not all(headers):
+            continue
+        accepted = []
+        for row in rows[:30]:
+            if not isinstance(row, list) or len(row) != len(headers):
+                continue
+            values = [normalize(value)[:400] for value in row]
+            values = ["To be confirmed" if re.search(r"\b(?:hourly|daily|weekly|monthly|nightly|real.time)\b", value, re.I)
+                      and not re.search(r"\b(?:hourly|daily|weekly|monthly|nightly|real.time)\b", area_scope, re.I)
+                      else value for value in values]
+            values = ["To be confirmed" if re.search(r"mandatory|required", headers[index], re.I)
+                      and value.casefold() in {"yes", "no", "required", "optional"}
+                      else value for index, value in enumerate(values)]
+            line = " ".join(values).casefold()
+            if (not any(value != "To be confirmed" for value in values)
+                    or any(term in line and term not in area_scope for term in excluded)):
+                continue
+            # Model output cannot silently establish commercial or measurable
+            # commitments absent from the client's own requirement.
+            source_numbers = set(re.findall(r"\b\d+(?:\.\d+)?\b", area_scope))
+            if any(number not in source_numbers for number in re.findall(r"\b\d+(?:\.\d+)?\b", line)):
+                continue
+            accepted.append(values)
+        if accepted:
+            result.append({"section": item["section"],
+                           "title": normalize(item.get("title") or item["section"])[:120],
+                           "columns": headers, "rows": accepted,
+                           "requirement_ids": [ref for ref in refs if isinstance(ref, str) and ref in allowed_ids],
+                           "origin": "proposed"})
     return result
