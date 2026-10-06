@@ -89,6 +89,14 @@ class BusinessRequirementsAgentTests(unittest.TestCase):
         self.assertEqual(tables[0]["rows"], [["Lead source", "Record origin"]])
         self.assertEqual(tables[0]["origin"], "proposed")
 
+    def test_source_configuration_fallback_keeps_an_omitted_area_in_the_brd(self):
+        rows = [{"id": "BR-021", "area": "Zoho Forms",
+                 "requirement": "All website form submissions should create or update CRM leads."}]
+        table = brd._source_configuration_table("Zoho Forms", rows)
+        self.assertEqual(table["origin"], "source")
+        self.assertEqual(table["requirement_ids"], ["BR-021"])
+        self.assertIn("create or update CRM leads", table["rows"][0][0])
+
     def test_acceptance_criteria_are_read_from_flattened_document_table(self):
         text = "Project heading\n9.2 Document Sign-Off\n# | Acceptance Criterion | Verified By | Status\n"
         text += "1 | Lead assignment works as agreed | Sales Manager | Pending\n"

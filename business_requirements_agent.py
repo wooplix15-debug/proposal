@@ -35,6 +35,20 @@ def _section_items(sections):
     return rows
 
 
+def _source_configuration_table(area, requirements):
+    """Keep a BRD usable if the model omits a small or secondary work area."""
+    rows = [[row["requirement"], "Configuration detail to be confirmed during discovery"]
+            for row in requirements[:60] if row.get("requirement")]
+    return {
+        "section": "Business Process",
+        "title": f"{area} configuration requirements",
+        "columns": ["Requirement", "Configuration detail"],
+        "rows": rows,
+        "requirement_ids": [row["id"] for row in requirements],
+        "origin": "source",
+    }
+
+
 def _source_list(requirement, section, next_headers):
     """Read literal list items beneath one source heading."""
     lines = requirement.splitlines()
@@ -139,15 +153,29 @@ def _groq_json(system, payload, max_tokens=6500):
                     time.sleep(min(float(match.group(1)) + 1, 20))
                 break
             except Exception as exc:
+                # Groq may report an oversized prompt as HTTP 413 rather than
+                # RateLimitError. Do not mask that cause as a generic failure.
+                if getattr(exc, "status_code", None) == 413:
+                    raise RuntimeError(
+                        "This requirement is too detailed for one BRD analysis request. "
+                        "Please split it into two documents and try again."
+                    ) from exc
                 last_error = exc
-    raise RuntimeError("The BRD agent could not complete its analysis. Please try again.") from last_error
+    if isinstance(last_error, RateLimitError):
+        match = re.search(r"try again in ([\d.]+)s", str(last_error), re.I)
+        wait = f" Please wait about {max(1, round(float(match.group(1))))} seconds and try again." if match else " Please try again in a moment."
+        raise RuntimeError("The BRD analysis service is temporarily busy." + wait) from last_error
+    raise RuntimeError("The BRD analysis service could not complete this document. Please try again.") from last_error
 
 
 def _draft_brief(sections, answers, fallback_summary):
     """Analyze scope, then develop each module into reviewable BRD specifications."""
     requirements = _section_items(sections)
     source = answers.get("source_requirement", "")
-    context = {"original_requirement": source, "reviewed_answers": answers.get("decisions", []),
+    # The structured requirements already contain the extracted source facts.
+    # Including the entire raw document again made detailed requirements exceed
+    # Groq's input limit before any BRD could be produced.
+    context = {"reviewed_answers": answers.get("decisions", []),
                "requirements": requirements}
     common = """You are Wooplix's dedicated BRD analyst. Produce a client-facing business
 requirements document at the level of a detailed implementation BRD. Analyze the
@@ -176,7 +204,7 @@ confirmed it. Include one row per relevant application or business process stage
 Items requested only as cost categories are commercial questions, not delivery scope.
 Avoid claims that implementation or support will be delivered when the client asks
 only for their price. Do not describe the system as complete or guaranteed.
-""", context, 6500)
+""", context, 2500)
     by_area = {}
     for item in requirements:
         by_area.setdefault(item["area"], set()).add(item["id"])
@@ -226,7 +254,7 @@ Return {"specification_tables":[{"section":"Fields and Master Data",
 Each table's requirement_ids must contain IDs supplied in this call. Proposed
 details must be reviewable, specific, and restricted to the client's capability.
 """, {"business_areas": list(area_names), "requirements": area_requirements,
-                  "original_requirement": source, "reviewed_answers": answers.get("decisions", [])}, 8500)
+                  "reviewed_answers": answers.get("decisions", [])}, 2500)
         tables.extend(proposed_design_tables(detail_data.get("specification_tables", []),
                                              area_requirements, source))
         for area in area_names:
@@ -245,14 +273,13 @@ Process. Return {"specification_tables":[{"section":"...","title":"...",
 "columns":["...","..."],"rows":[["...","..."]],
 "requirement_ids":["BR-001"]}]}. Use only supplied IDs and source scope;
 mark all unconfirmed values 'To be confirmed'.""",
-                               {"business_area": area, "requirements": focused,
-                                "original_requirement": source,
-                                "reviewed_answers": answers.get("decisions", [])}, 5000)
+                                {"business_area": area, "requirements": focused,
+                                "reviewed_answers": answers.get("decisions", [])}, 1800)
             tables.extend(proposed_design_tables(retry.get("specification_tables", []), focused, source))
             refined = [t for t in tables if set(t.get("requirement_ids", [])) & area_ids
                        and t["section"] != "Application Responsibilities"]
             if not refined:
-                raise RuntimeError(f"The BRD agent did not develop {area}. Please try again.")
+                tables.append(_source_configuration_table(area, focused))
     if requirements and not tables:
         raise RuntimeError("The BRD analysis returned no usable detail. Please try again.")
     overview = str(overview_data.get("overview") or fallback_summary)[:1800]

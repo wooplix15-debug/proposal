@@ -154,9 +154,15 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
                        'completed': relevant_completed, 'timing_sources': relevant_timing,
                        'crm': crm, 'analysis': analysis}
             reviews.append(dict(analysis, source=row['source'], review_token=workflow.seal(context)))
+    except workflow.AnalysisServiceError as exc:
+        print(f'Analysis service unavailable: {type(exc).__name__}')
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        print(f'Analysis input failed: {type(exc).__name__}')
+        raise HTTPException(400, f"We could not read the requirement structure: {exc}") from exc
     except Exception as exc:
         print(f'Analysis failed: {type(exc).__name__}')
-        raise HTTPException(502, 'Could not analyze the requirements. Please try again.') from exc
+        raise HTTPException(502, 'The requirements could not be analyzed. Please try again.') from exc
     return {'reviews': reviews, 'notices': notices,
             'evidence_note': ''}
 
@@ -179,9 +185,7 @@ async def generate(request: Request, reviews: str = Form(...)):
             prepared.append((req, context['source'], reference, context['analysis'], row.get('answers', {})))
     except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(400, str(exc)) from exc
-    except RuntimeError as exc:
-        # A detailed BRD must not silently fall back to a shallow checklist if
-        # the analysis service is temporarily unavailable.
+    except (RuntimeError, workflow.AnalysisServiceError) as exc:
         raise HTTPException(503, str(exc)) from exc
 
     host = request.headers.get("x-forwarded-host") or request.headers.get("host")
@@ -316,6 +320,8 @@ async def generate_brd(request: Request, reviews: str = Form(...)):
             prepared.append((document, answers))
     except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
 
     requested_format = (request.query_params.get("format") or "pdf").lower()
     if requested_format not in {"pdf", "docx", "zip"}:

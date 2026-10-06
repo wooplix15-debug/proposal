@@ -11,6 +11,15 @@ import wooplix_agent as agent
 from proposal_scope import requested_products, scope_inventory, product_matches, preserve_source_bullets
 
 
+class AnalysisServiceError(RuntimeError):
+    """A user-safe error when the model service cannot analyze a requirement."""
+
+
+def _rate_limit_wait_seconds(error):
+    match = re.search(r"try again in ([\d.]+)s", str(error), re.I)
+    return float(match.group(1)) if match else None
+
+
 def _groq_call_with_fallback(**kwargs):
     """Call the Groq API with automatic key rotation + model fallback on rate-limit (429).
 
@@ -33,24 +42,40 @@ def _groq_call_with_fallback(**kwargs):
     api_keys = agent.GROQ_API_KEYS if agent.GROQ_API_KEYS else [agent.GROQ_API_KEY]
 
     last_exc = None
-    for model_name in candidate_models:
-        call_kwargs = dict(kwargs, model=model_name)
-        # Apply / remove reasoning_effort based on the model family
-        if 'gpt-oss' in model_name:
-            call_kwargs['reasoning_effort'] = 'low'
-        else:
-            call_kwargs.pop('reasoning_effort', None)
-        for api_key in api_keys:
-            groq_client = Groq(api_key=api_key, timeout=90, max_retries=0)
-            try:
-                return groq_client.chat.completions.create(**call_kwargs)
-            except RateLimitError:
-                print(f"[workflow] Rate limit for {model_name} — trying next key or model.", flush=True)
-                last_exc = exc
-                continue
-            except Exception:
-                raise
-    raise last_exc
+    longest_wait = 0.0
+    # A brief single retry handles the common case where Groq tells us that
+    # capacity returns in a few seconds. Model/key rotation remains first.
+    for round_number in range(2):
+        for model_name in candidate_models:
+            call_kwargs = dict(kwargs, model=model_name)
+            # Apply / remove reasoning_effort based on the model family.
+            if 'gpt-oss' in model_name:
+                call_kwargs['reasoning_effort'] = 'low'
+            else:
+                call_kwargs.pop('reasoning_effort', None)
+            for api_key in api_keys:
+                groq_client = Groq(api_key=api_key, timeout=90, max_retries=0)
+                try:
+                    return groq_client.chat.completions.create(**call_kwargs)
+                except RateLimitError as exc:
+                    last_exc = exc
+                    wait = _rate_limit_wait_seconds(exc)
+                    longest_wait = max(longest_wait, wait or 0)
+                    print(f"[workflow] Rate limit for {model_name} — trying next key or model.", flush=True)
+                    continue
+                except Exception as exc:
+                    raise AnalysisServiceError(
+                        "The analysis service had a connection problem. Please try Analyze again."
+                    ) from exc
+        if round_number == 0 and 0 < longest_wait <= 20:
+            time.sleep(longest_wait + 1)
+            continue
+        break
+    if last_exc:
+        wait = _rate_limit_wait_seconds(last_exc)
+        suffix = f" Please wait about {max(1, round(wait))} seconds and try again." if wait else " Please try again in a moment."
+        raise AnalysisServiceError("The analysis service is temporarily busy." + suffix) from last_exc
+    raise AnalysisServiceError("The analysis service could not be reached. Please try again.")
 
 def market_estimate(product):
     """Return a versioned local planning estimate; never replace saved actuals."""
