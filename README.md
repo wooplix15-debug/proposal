@@ -167,3 +167,7 @@ The API also provides `/api/analyze` and `/api/generate`. The generation endpoin
 ## Checks
 
 Run `python3 -m unittest discover -s tests -v`. The regression checks cover full product detection, missing scope, automatic draft correction, source-only requirements, missing times, mixed scheduling and report content. `tests/fixtures/zoho_event_requirement.txt` contains a full multi-product sample for end-to-end review.
+
+## Business Requirements Documents
+
+The frontend offers two separate document choices: **Project Proposal** (the existing proposal agent and its quote/timeline content) and **Business Requirements Document** (a dedicated `business_requirements_agent.py` workflow). The BRD reuses the reviewed requirement and follow-up answers, assigns stable BRD IDs, and organizes all stated requirements into business areas, rules, data, integrations, reports, access, training, requested quote categories, open decisions and sign-off. It preserves the request's wording and does not add prices or unconfirmed product features. Select PDF, Word or ZIP for the BRD download. The BRD uses a separate `/api/brd/generate` endpoint and branded PDF/DOCX renderers; it does not run proposal generation.

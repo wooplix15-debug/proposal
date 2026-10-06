@@ -17,6 +17,7 @@ import wooplix_agent as agent
 import proposal_workflow as workflow
 import project_records
 from proposal_scope import finalize_client_content
+import business_requirements_agent as brd_agent
 
 app = FastAPI(title="Wooplix Proposal Agent")
 MAX_FILES = 5
@@ -289,3 +290,93 @@ async def generate(request: Request, reviews: str = Form(...)):
             "Access-Control-Expose-Headers": "Content-Disposition, X-Proposal-Client, X-Proposal-Filename, X-Proposal-Type",
         },
     )
+
+
+@app.post("/api/brd/generate")
+@app.post("/api/index.py/brd/generate")
+@app.post("/brd/generate")
+async def generate_brd(request: Request, reviews: str = Form(...)):
+    """Dedicated Business Requirements Document agent and export path."""
+    try:
+        reviewed = json.loads(reviews)
+        if not isinstance(reviewed, list) or not 1 <= len(reviewed) <= MAX_FILES:
+            raise ValueError("Supply one to five analyzed requirements.")
+        prepared = []
+        for row in reviewed:
+            context = workflow.unseal(row["review_token"])
+            answers = row.get("answers", {})
+            document = brd_agent.build_document(
+                context["requirement"], context["analysis"], answers,
+                source_name=context.get("source", ""),
+            )
+            prepared.append((document, answers))
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    requested_format = (request.query_params.get("format") or "pdf").lower()
+    if requested_format not in {"pdf", "docx", "zip"}:
+        raise HTTPException(400, "Choose PDF, Word or ZIP format.")
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    files = []
+    with tempfile.TemporaryDirectory(prefix="wooplix-brd-") as work:
+        for index, (document, _) in enumerate(prepared, start=1):
+            stem = _safe_name(document["project_name"])
+            if stem == "Project_name_to_be_confirmed":
+                stem = "Business_Requirements"
+            root = Path(work) / f"brd-{index}"
+            root.mkdir()
+            pdf_path = root / f"Wooplix_Business_Requirements_{stem}.pdf"
+            docx_path = root / f"Wooplix_Business_Requirements_{stem}.docx"
+            json_path = root / f"Wooplix_Business_Requirements_{stem}.json"
+            json_path.write_text(json.dumps(document, indent=2, ensure_ascii=False), encoding="utf-8")
+            brd_agent.build_docx(document, str(docx_path))
+            try:
+                if os.environ.get("VERCEL"):
+                    base = host or os.environ.get("VERCEL_PROJECT_PRODUCTION_URL") or os.environ.get("VERCEL_URL")
+                    token = os.environ.get("PDF_RENDER_TOKEN")
+                    if not base or not token:
+                        raise RuntimeError("PDF renderer is not configured")
+                    url = base if base.startswith("http") else f"https://{base}"
+                    response = requests.post(
+                        f"{url.rstrip('/')}/api/pdf.php",
+                        json={"html": brd_agent.build_html(document)},
+                        headers={"Authorization": f"Bearer {token}"}, timeout=240,
+                    )
+                    response.raise_for_status()
+                    pdf_path.write_bytes(response.content)
+                else:
+                    brd_agent.build_pdf(document, str(pdf_path))
+            except Exception as exc:
+                raise HTTPException(502, "Could not create the Business Requirements PDF.") from exc
+            files.append((pdf_path, docx_path, json_path))
+
+        if len(files) == 1 and requested_format in {"pdf", "docx"}:
+            selected = files[0][0] if requested_format == "pdf" else files[0][1]
+            media_type = ("application/pdf" if requested_format == "pdf" else
+                          "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            return StreamingResponse(
+                io.BytesIO(selected.read_bytes()), media_type=media_type,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{selected.name}"',
+                    "X-Proposal-Filename": selected.name,
+                    "X-Proposal-Client": "Business Requirements",
+                    "Access-Control-Expose-Headers": "Content-Disposition, X-Proposal-Filename, X-Proposal-Client",
+                },
+            )
+
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+            for pdf_path, docx_path, json_path in files:
+                for path in (pdf_path, docx_path, json_path):
+                    bundle.write(path, arcname=f"Wooplix_Business_Requirements/{path.name}")
+        archive.seek(0)
+        name = f"Wooplix_Business_Requirements_{len(files)}_files.zip"
+        return StreamingResponse(
+            archive, media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{name}"',
+                "X-Proposal-Filename": name,
+                "X-Proposal-Client": "Business Requirements",
+                "Access-Control-Expose-Headers": "Content-Disposition, X-Proposal-Filename, X-Proposal-Client",
+            },
+        )

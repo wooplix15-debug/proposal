@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f8fc">
-  <title>Wooplix Proposal Agent</title>
+  <title>Wooplix Project Documents</title>
   <link rel="icon" type="image/png" href="/wooplix_logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -203,6 +203,21 @@
     .format-picker {
       margin: 22px 0 16px;
     }
+    .document-picker { margin-bottom: 20px; }
+    .document-label {
+      display: block; margin-bottom: 9px; color: #273b5a;
+      font-size: 12px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .document-options { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .document-option {
+      display:block; padding:13px; border:1.5px solid #dbe2ed;
+      border-radius:10px; background:#fafbfd; color:var(--ink);
+      text-align:left; cursor:pointer; font:inherit;
+    }
+    .document-option strong { display:block; margin-bottom:5px; font-size:13px; }
+    .document-option span { display:block; color:var(--muted); font-size:11px; line-height:1.45; }
+    .document-option.active { border-color:var(--blue); background:#eef3ff; color:var(--blue); }
     .format-label {
       display: block;
       font-size: 11px;
@@ -378,6 +393,7 @@
       margin-top: 32px;
     }
     @media (max-width: 540px) {
+      .document-options { grid-template-columns: 1fr; }
       .card { padding: 20px 16px; }
       .format-options { grid-template-columns: 1fr; }
     }
@@ -389,12 +405,12 @@
       <div class="brand">
         <img src="/wooplix_logo.png" alt="Wooplix Technologies">
       </div>
-      <span class="badge">Proposal Agent</span>
+      <span class="badge">Project Documents</span>
     </header>
 
     <div class="intro">
-      <h1>Turn requirements into a proposal.</h1>
-      <p>Upload a file or paste your client requirement text to generate a branded proposal.</p>
+      <h1>Turn requirements into a project document.</h1>
+      <p>Choose a proposal or a detailed Business Requirements Document.</p>
     </div>
 
     <div class="card">
@@ -430,9 +446,23 @@
         ></textarea>
       </div>
 
-      <!-- Format picker -->
+      <div class="document-picker">
+        <span class="document-label">Choose what to create</span>
+        <div class="document-options" role="group" aria-label="Document type">
+          <button type="button" class="document-option active" data-document="proposal" aria-pressed="true">
+            <strong>Project Proposal</strong>
+            <span>Scope, timeline and requested quote items.</span>
+          </button>
+          <button type="button" class="document-option" data-document="brd" aria-pressed="false">
+            <strong>Business Requirements Document</strong>
+            <span>Detailed requirements, data, integrations, rules and open decisions.</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- File format picker -->
       <div class="format-picker">
-        <label class="format-label">Download format</label>
+        <label class="format-label">File format</label>
         <div class="format-options">
           <div class="format-btn active" data-fmt="pdf">📄 PDF Document</div>
           <div class="format-btn" data-fmt="docx">📝 Word (DOCX)</div>
@@ -442,7 +472,7 @@
 
       <button class="submit-btn" id="generateBtn" disabled>Analyze requirements →</button>
       <section id="reviewPanel" style="display:none;margin-top:20px" aria-live="polite">
-        <h3>Review and answer</h3><div id="reviewContent"></div>
+        <h3>Review the scope and answer what you can</h3><div id="reviewContent"></div>
         <button class="submit-btn" id="finishBtn">Generate proposal with these answers →</button>
       </section>
       <div class="status-msg" id="statusMsg" role="status" aria-live="polite"></div>
@@ -479,6 +509,7 @@
 
     let selectedFile = null;
     let selectedFormat = 'pdf';
+    let selectedDocument = 'proposal';
     let activeTab = 'file';
 
     // Tab switching
@@ -517,6 +548,22 @@
         document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         selectedFormat = btn.dataset.fmt;
+      };
+    });
+
+    document.querySelectorAll('.document-option').forEach(btn => {
+      btn.onclick = () => {
+        selectedDocument = btn.dataset.document;
+        document.querySelectorAll('.document-option').forEach(option => {
+          const active = option === btn;
+          option.classList.toggle('active', active);
+          option.setAttribute('aria-pressed', String(active));
+        });
+        finishBtn.textContent = selectedDocument === 'brd'
+          ? 'Create Business Requirements Document →'
+          : 'Generate proposal with these answers →';
+        resultBox.querySelector('.result-badge').textContent = selectedDocument === 'brd'
+          ? '✓ Business Requirements Document Ready' : '✓ Proposal Ready';
       };
     });
 
@@ -649,9 +696,11 @@
       }
       const fd=new FormData();fd.append('reviews',JSON.stringify(payload));
       busy=true;finishBtn.disabled=true;generateBtn.disabled=true;
-      statusMsg.textContent='Creating your proposal…';
+      const brd = selectedDocument === 'brd';
+      statusMsg.textContent=brd ? 'Creating your Business Requirements Document…' : 'Creating your proposal…';
       try {
-        const res=await fetch(`/api/generate?format=${selectedFormat}`,{method:'POST',body:fd});
+        const endpoint = brd ? '/api/brd/generate' : '/api/generate';
+        const res=await fetch(`${endpoint}?format=${selectedFormat}`,{method:'POST',body:fd});
         if(!res.ok){const err=await res.json();throw new Error(err.detail||'Generation failed.');}
         const filename=res.headers.get('x-proposal-filename')||'Wooplix_Results.zip';
         const client=res.headers.get('x-proposal-client')||'Client';
@@ -660,7 +709,9 @@
         const a=element('a','',document.body);a.href=resultUrl;a.download=filename;a.click();a.remove();
         resultClient.textContent=client;resultFile.textContent=filename;
         downloadAgainBtn.href=resultUrl;downloadAgainBtn.download=filename;resultBox.style.display='block';
-        statusMsg.textContent='Proposal downloaded. Review it before sharing.';
+        statusMsg.textContent=brd
+          ? 'Business Requirements Document downloaded. Review it with the project team.'
+          : 'Proposal downloaded. Review it before sharing.';
       }catch(err){statusMsg.textContent=err.message;}
       finally{busy=false;finishBtn.disabled=false;updateSubmitState();}
     };
