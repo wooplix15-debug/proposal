@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f8fc">
-  <title>Wooplix Project Documents</title>
+  <title>Wooplix Project Proposal</title>
   <link rel="icon" type="image/png" href="/wooplix_logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,12 +16,20 @@
       --line: #e3e9f2;
       --blue: #2d5ccb;
       --blue-hover: #1e4bb8;
+      --accent-soft: #eef3ff;
+      --accent-line: #b9c9f3;
       --navy: #101e38;
       --paper: #ffffff;
       --bg: #f8fafc;
       --green: #118462;
       --green-bg: #eafaf1;
       --card-shadow: 0 10px 30px rgba(18, 38, 71, 0.06);
+    }
+    body[data-document="brd"] {
+      --blue: #0f766e;
+      --blue-hover: #115e59;
+      --accent-soft: #eaf7f4;
+      --accent-line: #99d6cc;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -63,7 +71,7 @@
     }
     .document-options { display:grid; grid-template-columns:1fr; gap:7px; }
     .document-option {
-      display:block; width:100%; padding:12px;
+      display:block; width:100%; padding:12px 12px 12px 26px; position:relative;
       border:1px solid transparent; border-radius:10px;
       background:transparent; color:var(--ink);
       text-align:left; cursor:pointer; font:inherit;
@@ -71,7 +79,9 @@
     .document-option strong { display:block; margin-bottom:5px; font-size:13px; }
     .document-option span { display:block; color:var(--muted); font-size:11px; line-height:1.45; }
     .document-option:hover { background:#f7f9fd; }
-    .document-option.active { border-color:#b9c9f3; background:#eef3ff; color:var(--blue); }
+    .document-option::before { content:""; position:absolute; left:11px; top:17px; width:6px; height:6px; border-radius:50%; background:#2d5ccb; }
+    .document-option[data-document="brd"]::before { background:#0f766e; }
+    .document-option.active { border-color:var(--accent-line); background:var(--accent-soft); color:var(--blue); }
     .workspace { min-width:0; width:100%; }
     @media (max-width: 760px) {
       .container { grid-template-columns:1fr; gap:14px; }
@@ -97,8 +107,8 @@
     .badge {
       font-size: 11px;
       font-weight: 600;
-      color: #5a6e8b;
-      background: #edf2f9;
+      color: var(--blue);
+      background: var(--accent-soft);
       padding: 6px 12px;
       border-radius: 99px;
       letter-spacing: 0.2px;
@@ -122,6 +132,7 @@
     .card {
       background: var(--paper);
       border: 1px solid var(--line);
+      border-top: 3px solid var(--blue);
       border-radius: 18px;
       box-shadow: var(--card-shadow);
       padding: 28px 28px 30px;
@@ -137,13 +148,13 @@
     }
     .drop-zone:hover, .drop-zone.over {
       border-color: var(--blue);
-      background: #f2f6ff;
+      background: var(--accent-soft);
     }
     .drop-icon {
       width: 48px;
       height: 48px;
       border-radius: 14px;
-      background: #eaf0fc;
+      background: var(--accent-soft);
       color: var(--blue);
       margin: 0 auto 14px;
       display: grid;
@@ -199,7 +210,7 @@
       width: 32px;
       height: 32px;
       border-radius: 8px;
-      background: #eef3ff;
+      background: var(--accent-soft);
       color: var(--blue);
       display: grid;
       place-items: center;
@@ -276,7 +287,7 @@
     }
     .format-btn.active {
       border-color: var(--blue);
-      background: #eef3ff;
+      background: var(--accent-soft);
       color: var(--blue);
     }
     /* Tab bar */
@@ -301,7 +312,7 @@
     .tab-btn:hover { border-color: #83a0e6; background: #f4f7fd; }
     .tab-btn.active {
       border-color: var(--blue);
-      background: #eef3ff;
+      background: var(--accent-soft);
       color: var(--blue);
     }
     /* Text textarea */
@@ -422,7 +433,7 @@
     }
   </style>
 </head>
-<body>
+<body data-document="proposal">
   <div class="container">
     <aside class="sidebar">
       <div class="sidebar-title">Create a document</div>
@@ -442,12 +453,12 @@
       <div class="brand">
         <img src="/wooplix_logo.png" alt="Wooplix Technologies">
       </div>
-      <span class="badge">Project Documents</span>
+      <span class="badge" id="documentBadge" aria-live="polite">Proposal workspace</span>
     </header>
 
     <div class="intro">
-      <h1>Turn requirements into a project document.</h1>
-      <p>Choose a proposal or a detailed Business Requirements Document.</p>
+      <h1 id="documentTitle">Create a project proposal.</h1>
+      <p id="documentDescription">Define the scope, timeline and commercial items for your client.</p>
     </div>
 
     <div class="card">
@@ -577,7 +588,19 @@
 
     document.querySelectorAll('.document-option').forEach(btn => {
       btn.onclick = () => {
+        if (busy || selectedDocument === btn.dataset.document) return;
         selectedDocument = btn.dataset.document;
+        const isBrd = selectedDocument === 'brd';
+        document.body.dataset.document = selectedDocument;
+        document.querySelector('#documentBadge').textContent = isBrd ? 'BRD workspace' : 'Proposal workspace';
+        document.querySelector('#documentTitle').textContent = isBrd
+          ? 'Create a business requirements document.' : 'Create a project proposal.';
+        document.querySelector('#documentDescription').textContent = isBrd
+          ? 'Detail the processes, fields, business rules and approvals for your project.'
+          : 'Define the scope, timeline and commercial items for your client.';
+        document.title = isBrd ? 'Wooplix Business Requirements Document' : 'Wooplix Project Proposal';
+        resultBox.style.display = 'none';
+        statusMsg.textContent = '';
         document.querySelectorAll('.document-option').forEach(option => {
           const active = option === btn;
           option.classList.toggle('active', active);
