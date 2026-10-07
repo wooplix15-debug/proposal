@@ -107,12 +107,21 @@ the web and command-line versions use the same concise DOCX and PDF layout.
    Never put secret values in Git or in the browser. The PHP function uses the
    Vercel community runtime configured in `vercel.json` and installs dompdf
    from `composer.lock`.
-3. Deploy. The UI checks service configuration at `/api/health`; proposal
+3. To enable accounts and saved output history, add
+   `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` from
+   the Supabase project. Run [`supabase/setup.sql`](supabase/setup.sql) once in
+   the Supabase SQL Editor. Keep the `generated-documents` bucket private.
+4. In Supabase **Authentication → URL Configuration**, add the deployed Vercel
+   URL to the allowed redirect URLs so email confirmation can return to the app.
+5. Deploy. The UI checks service configuration at `/api/health`; proposal
    generation is available after the key is set and the deployment is rebuilt.
 
 The API limits each file to 4 MB, the total batch to 15 MB, and each batch to
-five files. Uploaded documents are kept in temporary function storage and the
-generated ZIP is returned directly; this app does not persist uploads or results.
+five files. Uploaded requirements are kept in temporary function storage and
+are not saved. Signed-in users can save generated PDF, DOCX or ZIP files to a
+private Supabase bucket and see them in **My saved documents**. Each account can
+read and delete only its own saved files. Without Supabase configuration, the
+app continues to generate and download documents without account history.
 Both flows use the approved bundled delivery file. Test CRM deals are excluded even when Zoho credentials are present.
 
 Generated examples in `out/`, the local `.env`, Python caches and installed

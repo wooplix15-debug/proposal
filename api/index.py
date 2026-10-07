@@ -82,6 +82,16 @@ def health():
     return {"ok": True, "configured": bool(os.environ.get("GROQ_API_KEY")), "max_files": MAX_FILES}
 
 
+@app.get("/api/config")
+@app.get("/api/index.py/config")
+def public_config():
+    """Return only Supabase's public browser credentials, never server secrets."""
+    return {
+        "supabase_url": os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "").strip(),
+        "supabase_publishable_key": os.environ.get("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "").strip(),
+    }
+
+
 async def _extract_uploads(files, work, prefix):
     rows = []
     total = 0

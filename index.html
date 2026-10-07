@@ -416,6 +416,36 @@
     .download-again-btn:hover {
       background: #0d6349;
     }
+    .account-bar, .account-panel, .history-panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: var(--card-shadow);
+    }
+    .account-bar {
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:10px 14px; margin:0 0 14px; font-size:12px; color:var(--muted);
+    }
+    .account-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .small-btn {
+      border:1px solid #dbe2ed; border-radius:8px; background:#fff; color:#273b5a;
+      padding:7px 11px; cursor:pointer; font:600 12px "DM Sans",sans-serif;
+    }
+    .small-btn:hover { border-color:var(--blue); color:var(--blue); }
+    .account-panel, .history-panel { padding:16px; margin-bottom:14px; }
+    .auth-form { display:grid; grid-template-columns:1fr 1fr auto; align-items:end; gap:10px; }
+    .auth-form label { display:grid; gap:5px; color:#55667e; font-size:11px; font-weight:700; }
+    .auth-form input { width:100%; padding:9px 10px; border:1px solid #dbe2ed; border-radius:8px; }
+    .auth-note { margin-top:10px; font-size:11px; color:var(--muted); }
+    .auth-error { color:#a52b32; }
+    .history-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px; }
+    .history-heading h2 { font-size:15px; }
+    .history-list { display:grid; gap:8px; }
+    .history-item { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid var(--line); }
+    .history-title { font-size:12px; font-weight:700; }
+    .history-meta { margin-top:3px; color:var(--muted); font-size:11px; }
+    .history-item-actions { display:flex; gap:7px; }
+    .history-empty { color:var(--muted); font-size:12px; padding:6px 0; }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(4px); }
       to { opacity: 1; transform: none; }
@@ -430,6 +460,8 @@
       .document-options { grid-template-columns: 1fr; }
       .card { padding: 20px 16px; }
       .format-options { grid-template-columns: 1fr; }
+      .auth-form { grid-template-columns:1fr; }
+      .account-bar, .history-item { align-items:flex-start; flex-direction:column; }
     }
   </style>
 </head>
@@ -455,6 +487,33 @@
       </div>
       <span class="badge" id="documentBadge" aria-live="polite">Proposal workspace</span>
     </header>
+
+    <section class="account-bar" aria-label="Account">
+      <span id="accountMessage">Sign in to keep a private history of your generated documents.</span>
+      <div class="account-actions">
+        <button class="small-btn" type="button" id="authToggle">Sign in / Create account</button>
+        <button class="small-btn" type="button" id="signOutBtn" hidden>Sign out</button>
+      </div>
+    </section>
+    <section class="account-panel" id="authPanel" hidden>
+      <form class="auth-form" id="authForm">
+        <label>Email<input id="authEmail" type="email" autocomplete="email" required></label>
+        <label>Password<input id="authPassword" type="password" autocomplete="current-password" minlength="8" required></label>
+        <button class="small-btn" id="authSubmit" type="submit">Sign in</button>
+      </form>
+      <div class="account-actions" style="margin-top:10px">
+        <button class="small-btn" type="button" id="authMode">Create an account</button>
+        <button class="small-btn" type="button" id="authCancel">Close</button>
+      </div>
+      <p class="auth-note" id="authNote" aria-live="polite">Your uploaded requirement is used for processing only. Only the generated document is saved.</p>
+    </section>
+    <section class="history-panel" id="historyPanel" hidden>
+      <div class="history-heading">
+        <h2>My saved documents</h2>
+        <button class="small-btn" type="button" id="refreshHistoryBtn">Refresh</button>
+      </div>
+      <div class="history-list" id="historyList"></div>
+    </section>
 
     <div class="intro">
       <h1 id="documentTitle">Create a project proposal.</h1>
@@ -525,6 +584,7 @@
     </main>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
   <script>
     const filePicker = document.querySelector('#filePicker');
     const dropZone = document.querySelector('#dropZone');
@@ -541,11 +601,198 @@
     const panelText = document.querySelector('#panelText');
     const tabFile = document.querySelector('#tabFile');
     const tabText = document.querySelector('#tabText');
+    const accountMessage = document.querySelector('#accountMessage');
+    const authToggle = document.querySelector('#authToggle');
+    const signOutBtn = document.querySelector('#signOutBtn');
+    const authPanel = document.querySelector('#authPanel');
+    const authForm = document.querySelector('#authForm');
+    const authEmail = document.querySelector('#authEmail');
+    const authPassword = document.querySelector('#authPassword');
+    const authSubmit = document.querySelector('#authSubmit');
+    const authMode = document.querySelector('#authMode');
+    const authCancel = document.querySelector('#authCancel');
+    const authNote = document.querySelector('#authNote');
+    const historyPanel = document.querySelector('#historyPanel');
+    const historyList = document.querySelector('#historyList');
+    const refreshHistoryBtn = document.querySelector('#refreshHistoryBtn');
 
     let selectedFile = null;
     let selectedFormat = 'pdf';
     let selectedDocument = 'proposal';
     let activeTab = 'file';
+    let supabaseClient = null;
+    let signedInUser = null;
+    let createAccountMode = false;
+
+    function setAuthNote(message, isError=false) {
+      authNote.textContent = message;
+      authNote.classList.toggle('auth-error', isError);
+    }
+    function updateAccountUi() {
+      const signedIn = Boolean(signedInUser);
+      authToggle.hidden = signedIn;
+      signOutBtn.hidden = !signedIn;
+      accountMessage.textContent = signedIn
+        ? `Signed in as ${signedInUser.email}. Your generated documents are saved privately.`
+        : 'Sign in to keep a private history of your generated documents.';
+      historyPanel.hidden = !signedIn;
+      if (!signedIn) authPanel.hidden = true;
+    }
+    async function loadSavedDocuments() {
+      if (!supabaseClient || !signedInUser) return;
+      historyList.replaceChildren();
+      element('p', 'Loading your documents…', historyList).className = 'history-empty';
+      const { data, error } = await supabaseClient
+        .from('generated_documents')
+        .select('id,title,filename,document_type,storage_path,created_at')
+        .order('created_at', { ascending: false })
+        .limit(30);
+      historyList.replaceChildren();
+      if (error) {
+        element('p', 'Could not load saved documents. Check the Supabase setup.', historyList).className = 'history-empty';
+        console.error('Saved documents could not be loaded:', error.message);
+        return;
+      }
+      if (!data || !data.length) {
+        element('p', 'Generated documents you save will appear here.', historyList).className = 'history-empty';
+        return;
+      }
+      data.forEach(row => {
+        const item = element('div', '', historyList);
+        item.className = 'history-item';
+        const details = element('div', '', item);
+        element('div', row.title, details).className = 'history-title';
+        const date = new Date(row.created_at).toLocaleString();
+        element('div', `${row.document_type === 'brd' ? 'Business requirements document' : 'Project proposal'} · ${date}`, details).className = 'history-meta';
+        const actions = element('div', '', item);
+        actions.className = 'history-item-actions';
+        const download = element('button', 'Download', actions);
+        download.type = 'button'; download.className = 'small-btn';
+        download.onclick = async () => {
+          download.disabled = true;
+          const { data: signed, error: urlError } = await supabaseClient.storage
+            .from('generated-documents').createSignedUrl(row.storage_path, 60);
+          download.disabled = false;
+          if (urlError || !signed?.signedUrl) {
+            accountMessage.textContent = 'Could not open that saved file. Please refresh and try again.';
+            return;
+          }
+          const link = document.createElement('a');
+          link.href = signed.signedUrl; link.download = row.filename; link.rel = 'noopener';
+          document.body.appendChild(link); link.click(); link.remove();
+        };
+        const remove = element('button', 'Delete', actions);
+        remove.type = 'button'; remove.className = 'small-btn';
+        remove.onclick = async () => {
+          if (!window.confirm(`Delete “${row.title}” from your saved documents?`)) return;
+          remove.disabled = true;
+          const { error: fileError } = await supabaseClient.storage.from('generated-documents').remove([row.storage_path]);
+          if (fileError) {
+            remove.disabled = false;
+            accountMessage.textContent = 'Could not delete the saved file. Please try again.';
+            return;
+          }
+          const { error: rowError } = await supabaseClient.from('generated_documents').delete().eq('id', row.id);
+          if (rowError) {
+            accountMessage.textContent = 'The file was deleted, but its history row could not be removed.';
+            return;
+          }
+          await loadSavedDocuments();
+        };
+      });
+    }
+    async function saveGeneratedDocument(blob, filename, client, documentType) {
+      if (!supabaseClient || !signedInUser) return false;
+      const documentId = crypto.randomUUID();
+      const safeFilename = filename.replace(/[^A-Za-z0-9._-]+/g, '_');
+      const storagePath = `${signedInUser.id}/${documentId}/${safeFilename}`;
+      const contentType = blob.type || 'application/octet-stream';
+      const { error: uploadError } = await supabaseClient.storage
+        .from('generated-documents')
+        .upload(storagePath, blob, { contentType, upsert: false });
+      if (uploadError) throw uploadError;
+      const label = documentType === 'brd' ? 'Business Requirements Document' : 'Project Proposal';
+      const { error: recordError } = await supabaseClient.from('generated_documents').insert({
+        id: documentId,
+        user_id: signedInUser.id,
+        title: `${client || 'Client'} — ${label}`,
+        filename: safeFilename,
+        document_type: documentType,
+        storage_path: storagePath,
+      });
+      if (recordError) {
+        await supabaseClient.storage.from('generated-documents').remove([storagePath]);
+        throw recordError;
+      }
+      await loadSavedDocuments();
+      return true;
+    }
+    async function initializeSupabase() {
+      try {
+        const configResponse = await fetch('/api/config');
+        const config = await configResponse.json();
+        if (!config.supabase_url || !config.supabase_publishable_key || !window.supabase?.createClient) {
+          accountMessage.textContent = 'Document history is not configured yet. You can still create and download documents.';
+          authToggle.hidden = true;
+          return;
+        }
+        supabaseClient = window.supabase.createClient(config.supabase_url, config.supabase_publishable_key);
+        const { data, error } = await supabaseClient.auth.getSession();
+        if (error) throw error;
+        signedInUser = data.session?.user || null;
+        updateAccountUi();
+        if (signedInUser) await loadSavedDocuments();
+        supabaseClient.auth.onAuthStateChange((_event, session) => {
+          signedInUser = session?.user || null;
+          updateAccountUi();
+          if (signedInUser) setTimeout(loadSavedDocuments, 0);
+        });
+      } catch (error) {
+        accountMessage.textContent = 'Could not connect to document history. You can still create and download documents.';
+        authToggle.hidden = true;
+        console.error('Supabase setup could not be initialized:', error.message);
+      }
+    }
+    authToggle.onclick = () => { authPanel.hidden = !authPanel.hidden; };
+    authCancel.onclick = () => { authPanel.hidden = true; };
+    authMode.onclick = () => {
+      createAccountMode = !createAccountMode;
+      authSubmit.textContent = createAccountMode ? 'Create account' : 'Sign in';
+      authMode.textContent = createAccountMode ? 'I already have an account' : 'Create an account';
+      authPassword.autocomplete = createAccountMode ? 'new-password' : 'current-password';
+      setAuthNote('Your uploaded requirement is used for processing only. Only the generated document is saved.');
+    };
+    authForm.onsubmit = async event => {
+      event.preventDefault();
+      if (!supabaseClient) return;
+      authSubmit.disabled = true;
+      try {
+        const email = authEmail.value.trim();
+        const password = authPassword.value;
+        const result = createAccountMode
+          ? await supabaseClient.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } })
+          : await supabaseClient.auth.signInWithPassword({ email, password });
+        if (result.error) throw result.error;
+        if (createAccountMode && !result.data.session) {
+          setAuthNote('Account created. Check your email to confirm it, then sign in.');
+        } else {
+          setAuthNote(createAccountMode ? 'Account created and signed in.' : 'You are signed in.');
+          authPassword.value = '';
+          authPanel.hidden = true;
+        }
+      } catch (error) {
+        setAuthNote(error.message || 'Could not sign in. Please check your details and try again.', true);
+      } finally {
+        authSubmit.disabled = false;
+      }
+    };
+    signOutBtn.onclick = async () => {
+      if (!supabaseClient) return;
+      const { error } = await supabaseClient.auth.signOut();
+      if (error) accountMessage.textContent = 'Could not sign out. Please try again.';
+    };
+    refreshHistoryBtn.onclick = loadSavedDocuments;
+    initializeSupabase();
 
     // Tab switching
     tabFile.onclick = () => {
@@ -759,9 +1006,19 @@
         const a=element('a','',document.body);a.href=resultUrl;a.download=filename;a.click();a.remove();
         resultClient.textContent=client;resultFile.textContent=filename;
         downloadAgainBtn.href=resultUrl;downloadAgainBtn.download=filename;resultBox.style.display='block';
-        statusMsg.textContent=brd
+        let historyMessage = ' Sign in to save it in My saved documents.';
+        if (signedInUser) {
+          try {
+            await saveGeneratedDocument(blob, filename, client, selectedDocument);
+            historyMessage = ' Saved to My saved documents.';
+          } catch (saveError) {
+            console.error('Generated document could not be saved:', saveError.message);
+            historyMessage = ' The download succeeded, but it could not be saved to your history.';
+          }
+        }
+        statusMsg.textContent=(brd
           ? 'Business Requirements Document downloaded. Review it with the project team.'
-          : 'Proposal downloaded. Review it before sharing.';
+          : 'Proposal downloaded. Review it before sharing.')+historyMessage;
       }catch(err){statusMsg.textContent=err.message;}
       finally{busy=false;finishBtn.disabled=false;updateSubmitState();}
     };
