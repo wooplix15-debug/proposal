@@ -137,9 +137,10 @@ def validated_model_tables(tables, source, requirements):
             if not excerpt or len(excerpt) > 4000 or excerpt not in normalized:
                 continue
             cells = [normalize(cell) for cell in row]
-            if all(not cell or cell == "To be confirmed" or cell in ids
+            cells = ["" if cell.casefold() == "to be confirmed" else cell for cell in cells]
+            if all(not cell or cell in ids
                    or cell.casefold() in excerpt for cell in cells):
-                if any(cell and cell != "To be confirmed" and cell not in ids for cell in cells):
+                if any(cell and cell not in ids for cell in cells):
                     accepted.append(cells)
         if accepted:
             result.append({"section": table["section"],
@@ -183,14 +184,15 @@ def proposed_design_tables(tables, requirements, source):
             if not isinstance(row, list) or len(row) != len(headers):
                 continue
             values = [normalize(value)[:400] for value in row]
-            values = ["To be confirmed" if re.search(r"\b(?:hourly|daily|weekly|monthly|nightly|real.time)\b", value, re.I)
+            values = ["" if value.casefold() == "to be confirmed" else value for value in values]
+            values = ["" if re.search(r"\b(?:hourly|daily|weekly|monthly|nightly|real.time)\b", value, re.I)
                       and not re.search(r"\b(?:hourly|daily|weekly|monthly|nightly|real.time)\b", area_scope, re.I)
                       else value for value in values]
-            values = ["To be confirmed" if re.search(r"mandatory|required", headers[index], re.I)
+            values = ["" if re.search(r"mandatory|required", headers[index], re.I)
                       and value.casefold() in {"yes", "no", "required", "optional"}
                       else value for index, value in enumerate(values)]
             line = " ".join(values).casefold()
-            if (not any(value != "To be confirmed" for value in values)
+            if (not any(values)
                     or any(term in line and term not in area_scope for term in excluded)):
                 continue
             # Model output cannot silently establish commercial or measurable

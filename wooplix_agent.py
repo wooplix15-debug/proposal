@@ -103,7 +103,7 @@ HOUSE STYLE — match exactly how Wooplix sends proposals
 - Treat the REQUIRED SCOPE CHECKLIST as mandatory coverage. Include Backstage and Campaigns when requested.
 - Include a practical training plan covering every named training topic. Keep unconfirmed session counts, delivery mode and duration open.
 - Include the requested support scope; only commit to a duration or SLA when the requirement or user answers confirms it.
-- For a requested cost breakdown, include each named cost category in commercials.items. Use "To be quoted" for missing amounts, leave total empty, and note that licence and third-party fees require confirmation. Never omit requested cost categories because pricing is unavailable.
+- For a requested cost breakdown, include each named cost category in commercials.items. Leave missing amounts and totals blank. Never omit requested cost categories because pricing is unavailable.
 - Explicitly requested WhatsApp/SMS, data cleansing and integrations are in scope, with the provider and limits confirmed during discovery. Never invent a native provider or mark required work optional.
 - A client owning Zoho One does not request a separate Zoho One implementation phase.
 - Keep technical evidence, record IDs, filenames, spreadsheet references and historical-data commentary out of the client proposal. Historical figures inform an indicative phase schedule internally.
@@ -136,7 +136,7 @@ OUTPUT RULES
   "timeline": null,
   "status": "DRAFT"
 }
-- commercials: include requested cost categories even without prices, using "To be quoted" for missing amounts, as {"items":[{"item":"","amount":"","basis":""}], "total":"","note":""}; otherwise null.
+- commercials: include requested cost categories even without prices, leaving missing amounts blank, as {"items":[{"item":"","amount":"","basis":""}], "total":"","note":""}; otherwise null.
 - timeline: non-null ONLY when the requirement states an expectation or precedent supports one, as {"phases":[{"phase":"","duration":""}], "overall":""}; otherwise null.
 - open_points: items to be finalized during discovery; empty list if none.
 """
@@ -698,9 +698,9 @@ def build_docx(data, output):
     phases = tl.get("phases", [])
     if phases:
         section_h("7", "Indicative Implementation Timeline & Milestone Roadmap")
-        body_text("The implementation follows a staged rollout to ensure minimal operational disruption:", after=6)
+        body_text("The work areas are planned to run at the same time.", after=6)
         w = [2.0, 2.6, 1.1, 1.3]
-        tl_tbl = _make_table(4, w, ["Milestone / Phase", "Key Activities & Focus", "Duration", "Milestone Gate Sign-off"])
+        tl_tbl = _make_table(4, w, ["Work Area", "Key Activities & Focus", "Duration", "Review Point"])
         for idx, ph in enumerate(phases):
             _add_data_row(tl_tbl, w, [
                 ph.get("phase", ""), ph.get("key_activities", ""),
@@ -914,8 +914,8 @@ ul.cat-ul li {{ font-size: 9pt; margin-bottom: 3px; }}
     if phases:
         out.append('<div style="page-break-inside:avoid;">')
         out.append('<h2 class="sh">7. Indicative Implementation Timeline &amp; Milestone Roadmap</h2>')
-        out.append('<p class="body">The implementation follows a staged rollout to ensure minimal operational disruption:</p>')
-        out.append('<table class="dt" id="timeline"><tr><th style="width:26%;">Milestone / Phase</th><th style="width:40%;">Key Activities &amp; Focus</th><th style="width:14%;">Duration</th><th style="width:20%;">Milestone Gate Sign-off</th></tr>')
+        out.append('<p class="body">The work areas are planned to run at the same time.</p>')
+        out.append('<table class="dt" id="timeline"><tr><th style="width:26%;">Work Area</th><th style="width:40%;">Key Activities &amp; Focus</th><th style="width:14%;">Duration</th><th style="width:20%;">Review Point</th></tr>')
         for ph in phases:
             out.append(f'<tr><td><strong>{esc(ph.get("phase",""))}</strong></td>'
                        f'<td>{esc(ph.get("key_activities",""))}</td>'

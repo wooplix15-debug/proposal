@@ -274,4 +274,16 @@ def finalize_client_content(proposal, analysis, answers, requirement):
         if item not in pending:
             pending.append(item)
     proposal['open_points'] = pending
+
+    def clear_placeholders(value):
+        if isinstance(value, dict):
+            return {key: clear_placeholders(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [clear_placeholders(item) for item in value]
+        if isinstance(value, str):
+            value = re.sub(r"\b(?:To be confirmed|To be quoted)\b", "", value, flags=re.I)
+            return re.sub(r"\s+", " ", value).strip(" \t\r\n,;:")
+        return value
+
+    proposal = clear_placeholders(proposal)
     return proposal

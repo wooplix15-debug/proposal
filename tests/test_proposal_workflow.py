@@ -8,7 +8,9 @@ from types import SimpleNamespace
 import project_records
 import proposal_workflow as workflow
 import wooplix_agent as agent
-from proposal_scope import requested_products, coverage_gaps, scope_inventory, unsupported_scope, preserve_source_bullets
+from proposal_scope import (requested_products, coverage_gaps, scope_inventory,
+                            unsupported_scope, preserve_source_bullets,
+                            finalize_client_content)
 
 REQ = (Path(__file__).parent / 'fixtures/zoho_event_requirement.txt').read_text()
 
@@ -92,9 +94,9 @@ class ProposalWorkflowTests(unittest.TestCase):
                     'duration_estimates': [crm], 'questions': []}
         proposal = {'timeline': {'overall': '6-8 days', 'phases': [{'phase': 'Zoho One', 'duration': '14-18 days'}]}}
         result = workflow.apply_actual_delivery_timeline(proposal, analysis, {})['timeline']
-        self.assertTrue(result['overall'].startswith('To be confirmed'))
+        self.assertEqual(result['overall'], '')
         self.assertEqual([x['phase'] for x in result['phases']], ['Zoho CRM', 'Unspecified custom application'])
-        self.assertEqual(result['phases'][1]['duration'], 'To be confirmed')
+        self.assertEqual(result['phases'][1]['duration'], '')
 
     def test_all_requested_cost_categories_are_preserved_without_invented_prices(self):
         proposal = {'commercials': {'items': [{'item': 'Zoho CRM', 'amount': 'Approved price'}]}}
@@ -102,17 +104,33 @@ class ProposalWorkflowTests(unittest.TestCase):
         result = workflow.apply_requested_cost_breakdown(proposal, analysis)['commercials']['items']
         self.assertEqual([x['item'] for x in result], analysis['commercial_categories'])
         self.assertEqual(result[0]['amount'], 'Approved price')
-        self.assertEqual(result[1]['amount'], 'To be quoted')
+        self.assertEqual(result[1]['amount'], '')
 
-    def test_mixed_schedule_does_not_become_parallel_total(self):
+    def test_work_areas_are_scheduled_in_parallel(self):
         records = [x for x in self.records if x.get('product') in ('Zoho CRM', 'Zoho Creator')]
         analysis = {'requirement_sections': [{'product': x['product']} for x in records], 'duration_estimates': records,
-                    'questions': [{'id': 'q1', 'question': 'How should these work areas be scheduled?'}]}
-        result = workflow.apply_actual_delivery_timeline({}, analysis, {'q1': 'Some at the same time'})
-        self.assertTrue(result['timeline']['overall'].startswith('To be confirmed'))
-        result = workflow.apply_actual_delivery_timeline({}, analysis, {'q1': 'One after another'})
-        self.assertIn('16-20 working days', result['timeline']['overall'])
+                    'questions': []}
+        result = workflow.apply_actual_delivery_timeline({}, analysis, {})
+        self.assertIn('parallel', result['timeline']['overall'])
+        self.assertNotIn('assuming sequential', result['timeline']['overall'])
         self.assertIn('weeks', result['timeline']['overall'])
+
+    def test_no_question_asks_whether_work_areas_run_in_parallel(self):
+        self.assertTrue(workflow._asks_about_work_area_sequence(
+            'How would you like the work to be scheduled?'))
+        self.assertTrue(workflow._asks_about_work_area_sequence(
+            'Should these implementation phases happen one after another or at the same time?'))
+        self.assertFalse(workflow._asks_about_work_area_sequence(
+            'When should the customer site visit be scheduled?'))
+
+    def test_proposal_clears_unknown_placeholders(self):
+        proposal = {'timeline': {'overall': 'To be confirmed',
+                                'phases': [{'phase': 'Zoho CRM', 'duration': 'To be confirmed'}]},
+                    'commercials': {'items': [{'item': 'Training', 'amount': 'To be quoted'}]}}
+        result = finalize_client_content(proposal, {'requirement_sections': []}, {}, 'CRM requirement')
+        self.assertEqual(result['timeline']['overall'], '')
+        self.assertEqual(result['timeline']['phases'][0]['duration'], '')
+        self.assertEqual(result['commercials']['items'][0]['amount'], '')
 
     def test_renderer_does_not_inject_filler_or_false_terms(self):
         proposal = {'scope': [{'product': 'Zoho CRM', 'areas': [{'area': 'Leads', 'tasks': ['Assign leads to BDMs.']}]}],
@@ -146,10 +164,10 @@ class ProposalWorkflowTests(unittest.TestCase):
         phases = {x['phase']: x['duration'] for x in timeline['phases']}
         self.assertEqual(phases['Zoho CRM'].replace('–', '-'), '6-8 working days')
         self.assertEqual(phases['Zoho Analytics'], '22 working days')
-        self.assertEqual(phases['WhatsApp & SMS Integration'], 'Included in integration phase')
-        self.assertIn('38-40 working days', timeline['overall'])
+        self.assertEqual(phases['WhatsApp & SMS Integration'], 'Included in integration work area')
+        self.assertIn('22 working days', timeline['overall'])
         self.assertIn('weeks', timeline['overall'])
-        self.assertIn('assuming sequential delivery', timeline['overall'])
+        self.assertIn('parallel', timeline['overall'])
         self.assertTrue(timeline['benchmark_sources'])
 
 

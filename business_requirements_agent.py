@@ -37,7 +37,7 @@ def _section_items(sections):
 
 def _source_configuration_table(area, requirements):
     """Keep a BRD usable if the model omits a small or secondary work area."""
-    rows = [[row["requirement"], "Configuration detail to be confirmed during discovery"]
+    rows = [[row["requirement"], ""]
             for row in requirements[:60] if row.get("requirement")]
     return {
         "section": "Business Process",
@@ -47,6 +47,13 @@ def _source_configuration_table(area, requirements):
         "requirement_ids": [row["id"] for row in requirements],
         "origin": "source",
     }
+
+
+def _is_parallel_schedule_question(question):
+    text = str(question or "").casefold()
+    return (any(term in text for term in ("one after another", "at the same time", "overlap", "sequenc"))
+            or ("schedule" in text and any(term in text for term in
+                                           ("work areas", "work area", "work to be", "all work"))))
 
 
 def _source_list(requirement, section, next_headers):
@@ -185,7 +192,7 @@ into reviewable field definitions, business processes, rules, access, reports,
 integrations and alerts where relevant. Distinguish explicit facts from a proposed
 working design: propose reasonable details only within the requested capability.
 Unknown mandatory flags, owners, thresholds, formulas, mappings, schedules and
-recipients must say 'To be confirmed'. Never invent numeric targets, prices,
+recipients must be left blank. Never invent numeric targets, prices,
 contractual commitments, software products or unrelated features. Preserve the
 client's named products and scope boundaries. Write clear, specific business English.
 Return valid JSON only. Internal requirement IDs are for traceability; never put
@@ -231,16 +238,16 @@ the checklist. Give enough detail that stakeholders can review how each requeste
 capability would work. Use only relevant table types:
 - Fields and Master Data: entity/field, suggested type or format, mandatory status,
   purpose/mapping. Suggest sensible field names when a form or record is requested;
-  unknown type/mandatory/mapping must be 'To be confirmed'.
+  unknown type/mandatory/mapping must be blank.
 - Workflows and Business Rules: trigger, condition, action, exception or decision.
-- Roles and Access: role, record access, permitted action; unknown role names =
-  'To be confirmed'.
+- Roles and Access: role, record access, permitted action; leave unknown role names
+  blank.
 - Reports and Dashboards: KPI/widget, definition, data source, frequency/owner;
-  unknown formulas and owners = 'To be confirmed'.
+  unknown formulas and owners must be blank.
 - Integrations: source, target, data exchanged, trigger or direction; only connect
   products explicitly requested to be integrated.
-- Notifications: event/trigger, recipient, channel, content; unknowns =
-  'To be confirmed'. Do not invent a message template.
+- Notifications: event/trigger, recipient, channel, content; leave unknowns
+  blank. Do not invent a message template.
 - Business Process: step, actor, action, output; proposed order is explicitly
   labelled as proposed, never as agreed.
 Do not include sections unsupported by these areas. Include several meaningful
@@ -249,7 +256,7 @@ Prefer 3-8 rows per table. Use exact section names from: """ +
             ", ".join(SPECIFICATION_SECTIONS) + """.
 Return {"specification_tables":[{"section":"Fields and Master Data",
 "title":"Zoho CRM lead and account data", "columns":["Field","Type / format",
-"Mandatory","Purpose"], "rows":[["...","...","To be confirmed","..."]],
+"Mandatory","Purpose"], "rows":[["...","...","","..."]],
 "requirement_ids":["BR-001"]}]}.
 Each table's requirement_ids must contain IDs supplied in this call. Proposed
 details must be reviewable, specific, and restricted to the client's capability.
@@ -272,7 +279,7 @@ Roles and Access, Reports and Dashboards, Integrations, Notifications, Business
 Process. Return {"specification_tables":[{"section":"...","title":"...",
 "columns":["...","..."],"rows":[["...","..."]],
 "requirement_ids":["BR-001"]}]}. Use only supplied IDs and source scope;
-mark all unconfirmed values 'To be confirmed'.""",
+leave all unconfirmed values blank.""",
                                 {"business_area": area, "requirements": focused,
                                 "reviewed_answers": answers.get("decisions", [])}, 1800)
             tables.extend(proposed_design_tables(retry.get("specification_tables", []), focused, source))
@@ -293,8 +300,11 @@ mark all unconfirmed values 'To be confirmed'.""",
 
 def build_document(requirement, analysis, answers, source_name=""):
     """Make a source-grounded BRD with useful detail and no empty boilerplate."""
-    questions = analysis.get("questions") or []
-    if set(answers) != {q["id"] for q in questions}:
+    all_questions = analysis.get("questions") or []
+    questions = [q for q in all_questions if not _is_parallel_schedule_question(q.get("question", ""))]
+    expected_answers = {q["id"] for q in questions}
+    stale_schedule_answers = {q["id"] for q in all_questions if _is_parallel_schedule_question(q.get("question", ""))}
+    if not expected_answers.issubset(set(answers)) or set(answers) - expected_answers - stale_schedule_answers:
         raise ValueError("Answer each question or choose Leave open.")
     for answer in answers.values():
         if not isinstance(answer, str) or not answer.strip() or len(answer) > 4000:
@@ -343,13 +353,13 @@ def build_document(requirement, analysis, answers, source_name=""):
                            for row in table.get("rows", []) for value in row).casefold()
         missing = []
         if "journey" in requested and "journey" not in drafted:
-            missing.append(["Marketing journey", "To be confirmed",
+            missing.append(["Marketing journey", "",
                             "Run the approved campaign sequence for the selected audience",
-                            "To be confirmed"])
+                            ""])
         if "follow-up automation" in requested and "follow-up" not in drafted:
-            missing.append(["Follow-up automation", "To be confirmed",
+            missing.append(["Follow-up automation", "",
                             "Create the agreed follow-up action after a campaign interaction",
-                            "To be confirmed"])
+                            ""])
         if missing:
             specifications.append({"section": "Workflows and Business Rules",
                                    "title": "Marketing journey and follow-up design",
@@ -372,7 +382,7 @@ def build_document(requirement, analysis, answers, source_name=""):
                                     for term in ("analytics", "projects", "crm"))))
                        for detail in area.get("requirements", [])]
             focus = "; ".join(matched[:4]) if matched else "Practical use of the requested application"
-            plan_rows.append([name, focus, "To be confirmed", "To be confirmed"])
+            plan_rows.append([name, focus, "", ""])
         specifications.append({"section": "Training Plan", "title": "Practical training plan",
                                "columns": ["Application", "Practical focus", "Participants", "Duration"],
                                "rows": plan_rows, "origin": "proposed"})
@@ -404,9 +414,7 @@ def build_document(requirement, analysis, answers, source_name=""):
     open_decisions = []
     for question in questions:
         answer = answers[question["id"]].strip()
-        if answer.casefold() in {"leave open for discovery", "confirm during discovery", ""}:
-            open_decisions.append({"question": question["question"], "answer": "To be confirmed"})
-        else:
+        if answer.casefold() not in {"leave open for discovery", "confirm during discovery", ""}:
             open_decisions.append({"question": question["question"], "answer": answer})
 
     requirements_by_area = [{"name": name} for name in dict.fromkeys(
@@ -416,7 +424,7 @@ def build_document(requirement, analysis, answers, source_name=""):
         "title": "Business Requirements Document",
         "project_name": (Path(source_name).stem.replace("_", " ").strip()
                          if source_name and Path(source_name).stem.casefold() not in {"pasted requirement", "requirement"}
-                         else "Project name to be confirmed"),
+                         else "Project"),
         "prepared_for": "",
         "prepared_by": brand.COMPANY_NAME,
         "date": brand._ordinal_day(datetime.now(ZoneInfo("Asia/Kolkata"))),
@@ -453,7 +461,9 @@ def _e(value):
 
 
 def _plain(value):
-    return re.sub(r"\bBR-\d+\b", "", str(value or "")).strip()
+    text = re.sub(r"\bBR-\d+\b", "", str(value or ""))
+    text = re.sub(r"\bto be confirmed\b", "", text, flags=re.I)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _specs_for(doc, categories):

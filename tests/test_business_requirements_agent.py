@@ -73,9 +73,19 @@ class BusinessRequirementsAgentTests(unittest.TestCase):
     def test_html_keeps_open_question_without_mixing_in_proposal_prices(self):
         doc = self.build()
         html = brd.build_html(doc)
-        self.assertIn("Questions and Decisions", html)
-        self.assertIn("To be confirmed", html)
+        self.assertNotIn("Questions and Decisions", html)
+        self.assertNotIn("To be confirmed", html)
         self.assertNotIn("Commercial Items Requested", html)
+
+    def test_schedule_question_is_ignored_and_does_not_add_placeholder(self):
+        analysis = dict(self.analysis, questions=[{
+            "id": "schedule", "question": "How would you like the work to be scheduled?"}])
+        with patch.object(brd, "_draft_brief", return_value={"overview": "Summary", "process_views": []}):
+            doc = brd.build_document(SAMPLE, analysis, {})
+        html = brd.build_html(doc)
+        self.assertEqual(doc["open_decisions"], [])
+        self.assertNotIn("To be confirmed", html)
+        self.assertNotIn("Questions and Decisions", html)
 
     def test_proposed_tables_are_labelled_and_unrelated_scope_is_filtered(self):
         requirements = [{"id": "BR-001", "area": "Zoho CRM",
@@ -132,7 +142,7 @@ class BusinessRequirementsAgentTests(unittest.TestCase):
                           ["Phone", "To be confirmed"]],
                  "evidence": ["Phone | Text"] * 3}
         validated = validated_model_tables([table], "Phone | Text", [])
-        self.assertEqual(validated[0]["rows"], [["Phone", "Text"], ["Phone", "To be confirmed"]])
+        self.assertEqual(validated[0]["rows"], [["Phone", "Text"], ["Phone", ""]])
 
     def test_model_cannot_mix_values_from_unrelated_fields(self):
         table = {"section": "Fields and Master Data", "columns": ["Field", "Type"],
