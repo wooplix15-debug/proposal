@@ -8,10 +8,17 @@ create table if not exists public.generated_documents (
     user_id uuid not null references auth.users (id) on delete cascade,
     title text not null,
     filename text not null,
-    document_type text not null check (document_type in ('proposal', 'brd')),
+    document_type text not null,
     storage_path text not null unique,
     created_at timestamptz not null default now()
 );
+
+-- Reapply the allowed types so this script also updates an existing table.
+alter table public.generated_documents
+    drop constraint if exists generated_documents_document_type_check;
+alter table public.generated_documents
+    add constraint generated_documents_document_type_check
+    check (document_type in ('proposal', 'brd', 'software_plan'));
 
 alter table public.generated_documents enable row level security;
 revoke all on table public.generated_documents from anon;

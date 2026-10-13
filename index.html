@@ -31,6 +31,12 @@
       --accent-soft: #eaf7f4;
       --accent-line: #99d6cc;
     }
+    body[data-document="software_plan"] {
+      --blue: #6b4bc3;
+      --blue-hover: #573aa8;
+      --accent-soft: #f1edfb;
+      --accent-line: #c9bce9;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background: var(--bg);
@@ -102,6 +108,7 @@
     .document-option:hover { background:#f7f9fd; }
     .document-option::before { content:""; position:absolute; left:11px; top:17px; width:6px; height:6px; border-radius:50%; background:#2d5ccb; }
     .document-option[data-document="brd"]::before { background:#0f766e; }
+    .document-option[data-document="software_plan"]::before { background:#6b4bc3; }
     .document-option.active { border-color:var(--accent-line); background:var(--accent-soft); color:var(--blue); }
     .workspace { min-width:0; width:100%; }
     @media (max-width: 760px) {
@@ -491,7 +498,7 @@
   <section class="access-gate" id="accessGate" aria-labelledby="accessTitle">
     <img src="/wooplix_logo.png" alt="Wooplix Technologies">
     <h1 id="accessTitle">Private workspace</h1>
-    <p>Enter the access code shared with you to open the proposal and BRD tools.</p>
+    <p>Enter the access code shared with you to open the document tools.</p>
     <form class="access-form" id="accessForm">
       <label for="accessCode">Access code</label>
       <input id="accessCode" name="code" type="password" inputmode="text" autocomplete="off" minlength="15" maxlength="15" required>
@@ -510,6 +517,10 @@
         <button type="button" class="document-option" data-document="brd" aria-pressed="false">
           <strong>Business Requirements Document</strong>
           <span>Detailed requirements, data, integrations, rules and open decisions.</span>
+        </button>
+        <button type="button" class="document-option" data-document="software_plan" aria-pressed="false">
+          <strong>Software Planning Pack</strong>
+          <span>Plan user journeys, development, testing, training and handover.</span>
         </button>
       </nav>
     </aside>
@@ -761,7 +772,9 @@
         const details = element('div', '', item);
         element('div', row.title, details).className = 'history-title';
         const date = new Date(row.created_at).toLocaleString();
-        element('div', `${row.document_type === 'brd' ? 'Business requirements document' : 'Project proposal'} · ${date}`, details).className = 'history-meta';
+        const historyLabel = row.document_type === 'brd' ? 'Business requirements document'
+          : row.document_type === 'software_plan' ? 'Software planning pack' : 'Project proposal';
+        element('div', `${historyLabel} · ${date}`, details).className = 'history-meta';
         const actions = element('div', '', item);
         actions.className = 'history-item-actions';
         const download = element('button', 'Download', actions);
@@ -809,7 +822,8 @@
         .from('generated-documents')
         .upload(storagePath, blob, { contentType, upsert: false });
       if (uploadError) throw uploadError;
-      const label = documentType === 'brd' ? 'Business Requirements Document' : 'Project Proposal';
+      const label = documentType === 'brd' ? 'Business Requirements Document'
+        : documentType === 'software_plan' ? 'Software Planning Pack' : 'Project Proposal';
       const { error: recordError } = await supabaseClient.from('generated_documents').insert({
         id: documentId,
         user_id: signedInUser.id,
@@ -934,17 +948,28 @@
     document.querySelectorAll('.document-option').forEach(btn => {
       btn.onclick = () => {
         if (busy || selectedDocument === btn.dataset.document) return;
+        invalidateReview();
         selectedDocument = btn.dataset.document;
         const isBrd = selectedDocument === 'brd';
+        const isSoftwarePlan = selectedDocument === 'software_plan';
         document.body.dataset.document = selectedDocument;
-        document.querySelector('#documentBadge').textContent = isBrd ? 'BRD workspace' : 'Proposal workspace';
+        document.querySelector('#documentBadge').textContent = isBrd ? 'BRD workspace' : isSoftwarePlan ? 'Software planning workspace' : 'Proposal workspace';
         document.querySelector('#documentTitle').textContent = isBrd
-          ? 'Create a business requirements document.' : 'Create a project proposal.';
+          ? 'Create a business requirements document.' : isSoftwarePlan ? 'Plan a software project.' : 'Create a project proposal.';
         document.querySelector('#documentDescription').textContent = isBrd
           ? 'Detail the processes, fields, business rules and approvals for your project.'
+          : isSoftwarePlan ? 'Turn your requirements into a practical, reviewable delivery plan.'
           : 'Define the scope, timeline and commercial items for your client.';
-        document.title = isBrd ? 'Wooplix Business Requirements Document' : 'Wooplix Project Proposal';
+        document.title = isBrd ? 'Wooplix Business Requirements Document' : isSoftwarePlan ? 'Wooplix Software Planning Pack' : 'Wooplix Project Proposal';
         projectNameField.hidden = isBrd;
+        projectNameField.querySelector('label').textContent = isSoftwarePlan ? 'Project name (optional)' : 'Project name (optional)';
+        projectNameField.querySelector('p').textContent = 'If the requirement does not name the project, leave this blank to keep the title blank.';
+        document.querySelectorAll('.format-btn').forEach(formatButton => {
+          const fmt = formatButton.dataset.fmt;
+          formatButton.textContent = isSoftwarePlan
+            ? (fmt === 'pdf' ? '📄 Eight PDFs (ZIP)' : fmt === 'docx' ? '📝 Eight Word files (ZIP)' : '📦 All files (ZIP)')
+            : (fmt === 'pdf' ? '📄 PDF Document' : fmt === 'docx' ? '📝 Word (DOCX)' : '📦 All Files (ZIP)');
+        });
         resultBox.style.display = 'none';
         statusMsg.textContent = '';
         document.querySelectorAll('.document-option').forEach(option => {
@@ -954,9 +979,9 @@
         });
         finishBtn.textContent = selectedDocument === 'brd'
           ? 'Create Business Requirements Document →'
-          : 'Generate proposal with these answers →';
+          : isSoftwarePlan ? 'Create software planning pack →' : 'Generate proposal with these answers →';
         resultBox.querySelector('.result-badge').textContent = selectedDocument === 'brd'
-          ? '✓ Business Requirements Document Ready' : '✓ Proposal Ready';
+          ? '✓ Business Requirements Document Ready' : isSoftwarePlan ? '✓ Software Planning Pack Ready' : '✓ Proposal Ready';
       };
     });
 
@@ -1029,18 +1054,22 @@
         if (review.source !== 'Pasted requirement') element('h4', review.source, box);
         element('p',review.summary,box);
         if (review.requirement_sections && review.requirement_sections.length) {
-          element('h4','Scope included',box);
+          element('h4', selectedDocument === 'software_plan' ? 'Requirements found' : 'Scope included',box);
           const list=element('ul','',box);
-          review.requirement_sections.forEach(s=>element('li',s.product,list));
+          review.requirement_sections.forEach(s=>{
+            if (selectedDocument === 'software_plan') {
+              (s.requirements || []).forEach(requirement => element('li', requirement, list));
+            } else element('li',s.product,list);
+          });
         }
-        if(review.duration_estimates && review.duration_estimates.length){
+        if(selectedDocument === 'proposal' && review.duration_estimates && review.duration_estimates.length){
           element('h4','Estimated working days',box);
           review.duration_estimates.forEach(t=>{
             const basis=t.kind==='market_estimate'?'published planning estimate':'past delivery';
             element('p',`${t.product}: ${t.days} working days (based on ${basis})`,box);
           });
           element('p','These are planning estimates. The final schedule depends on the confirmed scope.',box);
-        } else {
+        } else if (selectedDocument === 'proposal') {
           element('p','No matching delivery time is available. Confirm the timeline during discovery.',box);
         }
         review.questions.forEach(q=>{
@@ -1066,12 +1095,13 @@
       if(activeTab==='file' && selectedFile) fd.append('files',selectedFile,selectedFile.name);
       else if(activeTab==='text' && requirementText.value.trim()) fd.append('text',requirementText.value.trim());
       else return;
-      if(selectedDocument==='proposal' && projectNameInput.value.trim()) fd.append('project_name', projectNameInput.value.trim());
+      if(['proposal','software_plan'].includes(selectedDocument) && projectNameInput.value.trim()) fd.append('project_name', projectNameInput.value.trim());
       busy=true;generateBtn.disabled=true;invalidateReview();
       const analyzedRevision = inputRevision;
       statusMsg.textContent='Analyzing your requirements…';
       try {
-        const res=await fetch('/api/analyze',{method:'POST',body:fd});
+        const analysisEndpoint = selectedDocument === 'software_plan' ? '/api/software-plan/analyze' : '/api/analyze';
+        const res=await fetch(analysisEndpoint,{method:'POST',body:fd});
         const data=await res.json();if(!res.ok)throw new Error(data.detail||'Analysis failed.');
         if (analyzedRevision !== inputRevision) throw new Error('The input changed during analysis. Analyze the latest input again.');
         reviews=data.reviews;showReviews();
@@ -1095,9 +1125,10 @@
       const fd=new FormData();fd.append('reviews',JSON.stringify(payload));
       busy=true;finishBtn.disabled=true;generateBtn.disabled=true;
       const brd = selectedDocument === 'brd';
-      statusMsg.textContent=brd ? 'Creating your Business Requirements Document…' : 'Creating your proposal…';
+      const softwarePlan = selectedDocument === 'software_plan';
+      statusMsg.textContent=brd ? 'Creating your Business Requirements Document…' : softwarePlan ? 'Creating your software planning pack…' : 'Creating your proposal…';
       try {
-        const endpoint = brd ? '/api/brd/generate' : '/api/generate';
+        const endpoint = brd ? '/api/brd/generate' : softwarePlan ? '/api/software-plan/generate' : '/api/generate';
         const res=await fetch(`${endpoint}?format=${selectedFormat}`,{method:'POST',body:fd});
         if(!res.ok){const err=await res.json();throw new Error(err.detail||'Generation failed.');}
         const filename=res.headers.get('x-proposal-filename')||'Wooplix_Results.zip';
@@ -1119,6 +1150,7 @@
         }
         statusMsg.textContent=(brd
           ? 'Business Requirements Document downloaded. Review it with the project team.'
+          : softwarePlan ? 'Software planning pack downloaded. Review the plan before implementation.'
           : 'Proposal downloaded. Review it before sharing.')+historyMessage;
       }catch(err){statusMsg.textContent=err.message;}
       finally{busy=false;finishBtn.disabled=false;updateSubmitState();}

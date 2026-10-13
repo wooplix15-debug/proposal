@@ -6,10 +6,12 @@ import hmac
 import os
 import re
 import requests
+import shutil
 import tempfile
 import time
 import zipfile
 import base64
+import subprocess
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -22,6 +24,7 @@ import proposal_workflow as workflow
 import project_records
 from proposal_scope import finalize_client_content
 import business_requirements_agent as brd_agent
+import software_planning_agent as software_plan_agent
 
 app = FastAPI(title="Wooplix Proposal Agent")
 MAX_FILES = 5
@@ -514,3 +517,171 @@ async def generate_brd(request: Request, reviews: str = Form(...)):
                 "Access-Control-Expose-Headers": "Content-Disposition, X-Proposal-Filename, X-Proposal-Client",
             },
         )
+
+
+@app.post("/api/software-plan/analyze")
+@app.post("/api/index.py/software-plan/analyze")
+async def analyze_software_plan(request: Request,
+                                files: Optional[List[UploadFile]] = File(None),
+                                text: Optional[str] = Form(None),
+                                project_name: Optional[str] = Form(None)):
+    """Analyze a software brief separately from Proposal and BRD analysis."""
+    _require_allowed_user(request)
+    if not agent.GROQ_API_KEY:
+        raise HTTPException(503, "Set GROQ_API_KEY before analyzing software requirements.")
+    if len(files or []) > MAX_FILES:
+        raise HTTPException(400, "Upload at most five requirement files.")
+    if len((project_name or "").strip()) > 120:
+        raise HTTPException(400, "Project name must be 120 characters or fewer.")
+    with tempfile.TemporaryDirectory(prefix="wooplix-software-analysis-") as work:
+        sources = await _extract_uploads(files, work, "software-requirement")
+    if text and text.strip():
+        sources.append({"source": "Pasted requirement", "text": text.strip()})
+    if not sources:
+        raise HTTPException(400, "Upload a requirement or paste its text.")
+    brief = "\n\n".join(f"SOURCE: {row['source']}\n{row['text']}" for row in sources)
+    if len(brief) > 60000:
+        raise HTTPException(413, "Please keep the combined requirements under 60,000 characters.")
+    try:
+        analysis = software_plan_agent.analyze(brief, project_name or "")
+        context = {"software_plan": True, "requirement": brief, "analysis": analysis,
+                   "source": ", ".join(row["source"] for row in sources)}
+        analysis["review_token"] = workflow.seal(context)
+        return {"reviews": [analysis], "notices": [], "evidence_note": ""}
+    except (ValueError, workflow.AnalysisServiceError) as exc:
+        raise HTTPException(503 if isinstance(exc, workflow.AnalysisServiceError) else 400, str(exc)) from exc
+    except Exception as exc:
+        print(f"Software planning analysis failed: {type(exc).__name__}")
+        raise HTTPException(502, "The software requirements could not be analyzed. Please try again.") from exc
+
+
+def _build_software_plan_pdf(documents: list[dict], target: Path, host: str | None = None) -> None:
+    rendered_html = software_plan_agent.build_bundle_html(documents)
+    if os.environ.get("VERCEL"):
+        base = host or os.environ.get("VERCEL_PROJECT_PRODUCTION_URL") or os.environ.get("VERCEL_URL")
+        token = os.environ.get("PDF_RENDER_TOKEN")
+        if not base or not token:
+            raise RuntimeError("The PDF renderer is not configured.")
+        url = base if base.startswith("http") else f"https://{base}"
+        response = requests.post(f"{url.rstrip('/')}/api/pdf.php", json={"html": rendered_html},
+                                 headers={"Authorization": f"Bearer {token}"}, timeout=240)
+        response.raise_for_status()
+        target.write_bytes(response.content)
+        return
+    php = shutil.which("php")
+    autoload = Path(__file__).resolve().parents[1] / "vendor" / "autoload.php"
+    if not php or not autoload.exists():
+        raise RuntimeError("PDF rendering needs PHP and the installed Dompdf package.")
+    with tempfile.TemporaryDirectory(prefix="wooplix-software-pdf-") as work:
+        html_path = Path(work) / "document.html"
+        html_path.write_text(rendered_html, encoding="utf-8")
+        result = subprocess.run([php, str(Path(__file__).resolve().parents[1] / "html_to_pdf.php"),
+                                 str(html_path), str(target)], capture_output=True, text=True, timeout=240)
+        if result.returncode or not target.exists() or target.stat().st_size == 0:
+            raise RuntimeError("Could not render the software planning PDF.")
+
+
+def _render_software_pack_pdf(document: dict, target: Path, host: str | None = None) -> None:
+    """Reuse the existing Proposal and BRD HTML/PDF renderers for those files."""
+    kind, content = document.get("kind"), document.get("content", {})
+    if kind == "proposal":
+        if not os.environ.get("VERCEL"):
+            agent.build_pdf(content, str(target))
+            return
+        rendered_html = agent.build_html(content)
+    elif kind == "brd":
+        if not os.environ.get("VERCEL"):
+            brd_agent.build_pdf(content, str(target))
+            return
+        rendered_html = brd_agent.build_html(content)
+    else:
+        _build_software_plan_pdf([document], target, host)
+        return
+    base = host or os.environ.get("VERCEL_PROJECT_PRODUCTION_URL") or os.environ.get("VERCEL_URL")
+    token = os.environ.get("PDF_RENDER_TOKEN")
+    if not base or not token:
+        raise RuntimeError("The PDF renderer is not configured.")
+    url = base if base.startswith("http") else f"https://{base}"
+    response = requests.post(f"{url.rstrip('/')}/api/pdf.php", json={"html": rendered_html},
+                             headers={"Authorization": f"Bearer {token}"}, timeout=240)
+    response.raise_for_status()
+    target.write_bytes(response.content)
+
+
+@app.post("/api/software-plan/generate")
+@app.post("/api/index.py/software-plan/generate")
+async def generate_software_plan(request: Request, reviews: str = Form(...)):
+    """Generate the eight-document software delivery pack from a reviewed brief."""
+    _require_allowed_user(request)
+    if not agent.GROQ_API_KEY:
+        raise HTTPException(503, "Set GROQ_API_KEY before generating the software planning pack.")
+    try:
+        reviewed = json.loads(reviews)
+        if not isinstance(reviewed, list) or len(reviewed) != 1:
+            raise ValueError("Analyze one software project at a time.")
+        row = reviewed[0]
+        context = workflow.unseal(row["review_token"])
+        if not context.get("software_plan"):
+            raise ValueError("This review is not for the software planning agent. Analyze the requirement again.")
+        documents = software_plan_agent.build_pack(context["analysis"], row.get("answers", {}),
+                                                   source_name=context.get("source", ""))
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except workflow.AnalysisServiceError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:
+        print(f"Software planning generation failed: {type(exc).__name__}")
+        raise HTTPException(502, "The planning documents could not be created. Please try again.") from exc
+
+    requested_format = (request.query_params.get("format") or "pdf").lower()
+    if requested_format not in {"pdf", "docx", "zip"}:
+        raise HTTPException(400, "Choose PDF, Word or ZIP format.")
+    project_stem = _safe_name(context["analysis"].get("project_name") or "Software_Planning_Pack")
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    try:
+        with tempfile.TemporaryDirectory(prefix="wooplix-software-pack-") as work:
+            root = Path(work)
+            all_paths = []
+            pdf_paths = []
+            docx_paths = []
+            manifest_files = []
+            for index, document in enumerate(documents, 1):
+                kind = document.get("kind", "document")
+                stem = f"{index:02d}-{kind}"
+                docx_path = root / f"{stem}.docx"
+                pdf_path = root / f"{stem}.pdf"
+                json_path = root / f"{stem}.json"
+                if kind == "proposal":
+                    agent.build_docx(document["content"], str(docx_path))
+                elif kind == "brd":
+                    brd_agent.build_docx(document["content"], str(docx_path))
+                else:
+                    software_plan_agent.build_docx(document, str(docx_path))
+                json_path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+                all_paths.extend([docx_path, json_path])
+                if requested_format != "docx":
+                    _render_software_pack_pdf(document, pdf_path, host)
+                    all_paths.append(pdf_path)
+                    pdf_paths.append(pdf_path)
+                docx_paths.append(docx_path)
+                manifest_files.append({"name": pdf_path.name, "word": docx_path.name, "type": kind})
+            summary_path = root / "run-summary.json"
+            summary_path.write_text(json.dumps({"status": "pack_ready", "artifact_count": len(documents),
+                                                "files": manifest_files}, ensure_ascii=False, indent=2),
+                                    encoding="utf-8")
+            archive = io.BytesIO()
+            selected = pdf_paths if requested_format == "pdf" else docx_paths if requested_format == "docx" else all_paths + [summary_path]
+            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
+                for path in selected:
+                    bundle.write(path, arcname=path.name)
+            archive.seek(0)
+            filename = f"Wooplix_Software_Planning_Pack_{project_stem}_{requested_format.upper()}.zip"
+            return StreamingResponse(archive, media_type="application/zip",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"',
+                         "X-Proposal-Filename": filename, "X-Proposal-Client": project_stem,
+                         "Access-Control-Expose-Headers": "Content-Disposition, X-Proposal-Filename, X-Proposal-Client"})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"Software planning export failed: {type(exc).__name__}")
+        raise HTTPException(502, "Could not export the software planning pack. Check PDF/DOCX support and try again.") from exc
