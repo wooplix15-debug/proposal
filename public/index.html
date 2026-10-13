@@ -60,6 +60,10 @@
     .access-status { min-height:18px; color:var(--muted); font-size:12px; }
     .access-status.error { color:#a52b32; }
     .workspace-exit { margin-left:8px; }
+    .project-name-field { margin:18px 0 4px; }
+    .project-name-field label { display:block; margin-bottom:6px; color:#42536c; font-size:12px; font-weight:700; }
+    .project-name-field input { width:100%; padding:11px 12px; border:1px solid #dbe2ed; border-radius:8px; }
+    .project-name-field p { margin-top:5px; color:var(--muted); font-size:11px; }
     .container {
       width: 100%;
       max-width: 1120px;
@@ -583,6 +587,12 @@
         ></textarea>
       </div>
 
+      <div class="project-name-field" id="projectNameField">
+        <label for="projectNameInput">Project name (optional)</label>
+        <input id="projectNameInput" type="text" maxlength="120" placeholder="Enter the exact title to use if the requirement does not name the project">
+        <p>If the requirement has no project name and you leave this blank, the proposal will leave the title blank.</p>
+      </div>
+
       <!-- File format picker -->
       <div class="format-picker">
         <label class="format-label">File format</label>
@@ -627,6 +637,8 @@
     const resultFile = document.querySelector('#resultFile');
     const downloadAgainBtn = document.querySelector('#downloadAgainBtn');
     const requirementText = document.querySelector('#requirementText');
+    const projectNameInput = document.querySelector('#projectNameInput');
+    const projectNameField = document.querySelector('#projectNameField');
     const panelFile = document.querySelector('#panelFile');
     const panelText = document.querySelector('#panelText');
     const tabFile = document.querySelector('#tabFile');
@@ -932,6 +944,7 @@
           ? 'Detail the processes, fields, business rules and approvals for your project.'
           : 'Define the scope, timeline and commercial items for your client.';
         document.title = isBrd ? 'Wooplix Business Requirements Document' : 'Wooplix Project Proposal';
+        projectNameField.hidden = isBrd;
         resultBox.style.display = 'none';
         statusMsg.textContent = '';
         document.querySelectorAll('.document-option').forEach(option => {
@@ -1002,6 +1015,7 @@
       document.getElementById(id).addEventListener('input', invalidateReview);
       document.getElementById(id).addEventListener('change', invalidateReview);
     }
+    projectNameInput.addEventListener('input', invalidateReview);
     const previousSetFile = setFile;
     setFile = f => { invalidateReview(); previousSetFile(f); };
     function element(tag, text, parent) {
@@ -1052,6 +1066,7 @@
       if(activeTab==='file' && selectedFile) fd.append('files',selectedFile,selectedFile.name);
       else if(activeTab==='text' && requirementText.value.trim()) fd.append('text',requirementText.value.trim());
       else return;
+      if(selectedDocument==='proposal' && projectNameInput.value.trim()) fd.append('project_name', projectNameInput.value.trim());
       busy=true;generateBtn.disabled=true;invalidateReview();
       const analyzedRevision = inputRevision;
       statusMsg.textContent='Analyzing your requirements…';

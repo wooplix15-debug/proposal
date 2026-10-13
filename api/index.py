@@ -48,6 +48,22 @@ def _safe_name(value):
     return re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_") or "Client"
 
 
+def _apply_explicit_project_name(proposal, context):
+    client = proposal.setdefault("client", {})
+    if not isinstance(client, dict):
+        client = proposal["client"] = {}
+    requested_name = str(context.get("requested_project_name") or "").strip()
+    if requested_name:
+        client["project_name"] = requested_name
+        return
+    generated_name = str(client.get("project_name") or "").strip()
+    normalize = lambda value: " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+    candidate = normalize(generated_name)
+    source = normalize(str(context.get("requirement") or ""))
+    if candidate and candidate not in source:
+        client["project_name"] = ""
+
+
 def _build_pdf_with_existing_template(proposal, target, host=None):
     """Render the exact same HTML through the same Dompdf options as the CLI."""
     if os.environ.get("VERCEL"):
@@ -212,9 +228,13 @@ async def _extract_uploads(files, work, prefix):
 async def analyze_requirement(request: Request,
                               files: Optional[List[UploadFile]] = File(None),
                               text: Optional[str] = Form(None),
+                              project_name: Optional[str] = Form(None),
                               completed_files: Optional[List[UploadFile]] = File(None),
                               completed_text: Optional[str] = Form(None)):
     _require_allowed_user(request)
+    project_name = (project_name or "").strip()
+    if len(project_name) > 120:
+        raise HTTPException(400, "Project name must be 120 characters or fewer.")
     if not agent.GROQ_API_KEY:
         raise HTTPException(503, "Set GROQ_API_KEY before analyzing requirements.")
     if len(files or []) > MAX_FILES or len(completed_files or []) > MAX_FILES:
@@ -252,7 +272,8 @@ async def analyze_requirement(request: Request,
             relevant_timing = [x for x in project_data if x.get('record_id') in context_record_ids]
             context = {'requirement': row['text'], 'source': row['source'],
                        'completed': relevant_completed, 'timing_sources': relevant_timing,
-                       'crm': crm, 'analysis': analysis}
+                       'crm': crm, 'analysis': analysis,
+                       'requested_project_name': project_name}
             reviews.append(dict(analysis, source=row['source'], review_token=workflow.seal(context)))
     except workflow.AnalysisServiceError as exc:
         print(f'Analysis service unavailable: {type(exc).__name__}')
@@ -308,6 +329,7 @@ async def generate(request: Request, reviews: str = Form(...)):
                                                     analysis.get('requirement_sections', []))
                     if not agent._looks_like_proposal(proposal):
                         raise HTTPException(status_code=502, detail=f"Could not create a proposal from {source_name}. Please try again.")
+                    _apply_explicit_project_name(proposal, context)
                     proposal = workflow.apply_actual_delivery_timeline(proposal, analysis, answers)
                     proposal = workflow.apply_requested_cost_breakdown(proposal, analysis)
                     proposal = finalize_client_content(proposal, analysis, answers, requirement)

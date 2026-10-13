@@ -93,6 +93,7 @@ HOUSE STYLE — match exactly how Wooplix sends proposals
 - Project Introduction: ONE short paragraph. Pattern: "Wooplix Technologies Private Limited (Wooplix) will implement and customize <products> for <purpose> in line with the client's organizational policies and processes." Add at most one more sentence for the key business outcome.
 - Project Scope: grouped by product. Under each product list named configuration / implementation areas (for example "User, Role & Access Configuration", "Organization Setup", "Expense Policy Configuration", "Approval Matrix Configuration", "<Product> Integration", "Reports & Export Templates"). Under each area put terse imperative bullets ending with a full stop ("Add and invite all users.", "Configure role-based access rights for data visibility and actions.").
 - Carry the client's concrete values through verbatim wherever the requirement gives them: amounts, per-day or per-km rates, limits, bank names, user counts, report names, SLA figures. Never generalise them away.
+- Set client.project_name only when the requirement explicitly gives a project title. Never infer a project title from the industry, products, or work requested; leave it blank when no title is given.
 - Mark genuinely optional items by appending "(If Required)" to the area name or the bullet.
 - Pre-requisites: what the CLIENT must provide (credentials, master data, policies, sample templates, approval matrix, sign-offs).
 - Deliverables: concrete bullets (configured module, integrations, export templates, UAT, training, post-deployment support with its duration).
@@ -304,7 +305,7 @@ commercials: null, timeline: null, status: "DRAFT".
 The application constructs the scope, cost breakdown and timeline from the validated checklist
 and saved records. Leave scope EMPTY. Do not repeat the complete checklist in deliverables.
 Write one short introduction naming all requested apps and the business purpose. Unknown
-client names/contact details must be empty strings, never bracket placeholders.
+client and project names/contact details must be empty strings, never bracket placeholders. Do not infer a project title from the business type or requested apps.
 List only useful client dependencies and concrete handover deliverables. Refer to each
 product or shared scope once. Never invent features, metrics, custom modules, API methods,
 event registration, agendas, ticketing, speakers, lead intake channels or provider choices.
@@ -426,7 +427,7 @@ def normalize_proposal(data):
 
 def _get_cover_specs(data):
     client = data.get('client') or {}
-    rows = [('Document Type', 'Proposal'), ('Project Name', client.get('project_name') or 'Zoho Implementation for Event Management')]
+    rows = [('Document Type', 'Proposal'), ('Project Name', client.get('project_name') or '')]
     if client.get('company_name'):
         rows.append(('Prepared for', client['company_name']))
     rows += [('Prepared By', COMPANY_NAME),
@@ -523,7 +524,7 @@ def build_docx(data, output):
 
     client_data  = data.get("client", {}) or {}
     client_name  = client_data.get("company_name") or "Client"
-    project_name = client_data.get("project_name") or "Zoho Implementation for Event Management"
+    project_name = client_data.get("project_name") or ""
 
     # Cover logos — main wordmark left, partner badge right
     has_main  = os.path.exists(LOGO_MAIN_PATH)
@@ -769,7 +770,7 @@ def build_html(data):
 
     client      = data.get("client", {}) or {}
     client_name = client.get("company_name") or "Client"
-    project     = client.get("project_name") or "Zoho Implementation for Event Management"
+    project     = client.get("project_name") or ""
     hdr         = re.sub(r'["\\\r\n]', " ", project)[:60]
     logo_main  = _logo_data_uri()
     logo_badge = _badge_data_uri()
