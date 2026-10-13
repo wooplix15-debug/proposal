@@ -1,11 +1,15 @@
 """Vercel API for turning one or more requirement files into a ZIP result folder."""
 import io
 import json
+import hashlib
+import hmac
 import os
 import re
 import requests
 import tempfile
+import time
 import zipfile
+import base64
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -24,6 +28,20 @@ MAX_FILES = 5
 MAX_FILE_BYTES = 4 * 1024 * 1024
 MAX_BATCH_BYTES = 15 * 1024 * 1024
 ALLOWED_SUFFIXES = {".txt", ".md", ".doc", ".docx", ".pdf"}
+ACCESS_CODE_HASHES = {
+    "b9fa57a691ff45781b4c62ba2f4941acc502bd963cd8e86d0f6710afea12c0b9",
+    "9590833a07b965f154c5331f61a864cfa3f8450ee7ddd4f5fc954935063a3732",
+    "d5ed32e6e248d51f745900318b030c975143e59ead3a6162d252ddb0043cc29f",
+    "def5ef14f587f888b99cbb95f6b05239e864175b035492183ee75b4452033db1",
+    "870c78edb19f602e40fde3c5f1134e261f6c30196cc5122ad4f8ace039cc1e74",
+    "4c619d3c510f64e6cdc8e130c6fa6af7c8b53cc8c7cf8d5a2c5666348081c0e4",
+    "0d1a37a5b67548e950509058f01a0b51244ecf70020cb5629f8984705225838d",
+    "a7945f22e9a56c3a107d128b844b20b9dd50d0b894bec245281ce064e0c67df7",
+    "d9c086b9b04f83e1217ec6f3c1b598b489ea0eb2518bc29e7a905dde5d355cff",
+    "16456c3461762eb2265c5207250ed9eb92c9f000996a83fc14a60d2bdcc82c15",
+}
+ACCESS_COOKIE = "wooplix_access"
+ACCESS_SESSION_SECONDS = 60 * 60 * 24 * 30
 
 
 def _safe_name(value):
@@ -92,6 +110,76 @@ def public_config():
     }
 
 
+def _access_secret():
+    secret = os.environ.get("APP_ACCESS_SECRET", "").strip()
+    if len(secret) < 32:
+        raise HTTPException(503, "App access is not configured. Contact the app administrator.")
+    return secret.encode("utf-8")
+
+
+def _new_access_session():
+    expires = int(time.time()) + ACCESS_SESSION_SECONDS
+    payload = base64.urlsafe_b64encode(str(expires).encode()).decode().rstrip("=")
+    signature = hmac.new(_access_secret(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{signature}"
+
+
+def _has_access(request: Request):
+    token = request.cookies.get(ACCESS_COOKIE, "")
+    try:
+        payload, signature = token.split(".", 1)
+        expected = hmac.new(_access_secret(), payload.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            return False
+        expires = int(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode())
+        return expires > int(time.time())
+    except (ValueError, UnicodeDecodeError, HTTPException):
+        return False
+
+
+def _require_allowed_user(request: Request):
+    """Require a valid signed access-code session before using generation APIs."""
+    if not _has_access(request):
+        raise HTTPException(401, "Enter an access code to use this app.")
+
+
+@app.get("/api/access")
+@app.get("/api/index.py/access")
+def check_access(request: Request):
+    _access_secret()
+    return {"allowed": _has_access(request)}
+
+
+@app.post("/api/access/login")
+@app.post("/api/index.py/access/login")
+async def access_login(request: Request):
+    _access_secret()
+    try:
+        body = await request.json()
+    except ValueError as exc:
+        raise HTTPException(400, "Enter a valid access code.") from exc
+    code = str(body.get("code", "")).strip() if isinstance(body, dict) else ""
+    code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+    if not any(hmac.compare_digest(code_hash, saved) for saved in ACCESS_CODE_HASHES):
+        raise HTTPException(401, "That access code is not valid. Check it and try again.")
+    from fastapi.responses import JSONResponse
+    response = JSONResponse({"allowed": True})
+    response.set_cookie(
+        ACCESS_COOKIE, _new_access_session(), max_age=ACCESS_SESSION_SECONDS,
+        httponly=True, secure=True, samesite="strict", path="/",
+    )
+    return response
+
+
+@app.post("/api/access/logout")
+@app.post("/api/index.py/access/logout")
+def access_logout():
+    from fastapi.responses import JSONResponse
+    response = JSONResponse({"allowed": False})
+    response.delete_cookie(ACCESS_COOKIE, path="/", httponly=True, secure=True, samesite="strict")
+    return response
+
+
 async def _extract_uploads(files, work, prefix):
     rows = []
     total = 0
@@ -121,10 +209,12 @@ async def _extract_uploads(files, work, prefix):
 @app.post("/api/analyze")
 @app.post("/api/index.py/analyze")
 @app.post("/analyze")
-async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
+async def analyze_requirement(request: Request,
+                              files: Optional[List[UploadFile]] = File(None),
                               text: Optional[str] = Form(None),
                               completed_files: Optional[List[UploadFile]] = File(None),
                               completed_text: Optional[str] = Form(None)):
+    _require_allowed_user(request)
     if not agent.GROQ_API_KEY:
         raise HTTPException(503, "Set GROQ_API_KEY before analyzing requirements.")
     if len(files or []) > MAX_FILES or len(completed_files or []) > MAX_FILES:
@@ -182,6 +272,7 @@ async def analyze_requirement(files: Optional[List[UploadFile]] = File(None),
 @app.post("/generate")
 @app.post("/api/index.py")
 async def generate(request: Request, reviews: str = Form(...)):
+    _require_allowed_user(request)
     if not agent.GROQ_API_KEY:
         raise HTTPException(503, "Set GROQ_API_KEY before generating proposals.")
     try:
@@ -315,6 +406,7 @@ async def generate(request: Request, reviews: str = Form(...)):
 @app.post("/brd/generate")
 async def generate_brd(request: Request, reviews: str = Form(...)):
     """Dedicated Business Requirements Document agent and export path."""
+    _require_allowed_user(request)
     try:
         reviewed = json.loads(reviews)
         if not isinstance(reviewed, list) or not 1 <= len(reviewed) <= MAX_FILES:

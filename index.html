@@ -43,6 +43,23 @@
       padding: 32px 20px;
     }
     input, textarea, select { font-family: inherit; font-size: inherit; }
+    [hidden] { display:none !important; }
+    .access-gate {
+      width:min(100%, 420px); margin:auto; padding:32px;
+      border:1px solid var(--line); border-radius:18px; background:var(--paper);
+      box-shadow:var(--card-shadow); text-align:center;
+    }
+    .access-gate img { width:150px; height:auto; margin-bottom:26px; }
+    .access-gate h1 { font:800 24px Manrope,sans-serif; margin-bottom:8px; }
+    .access-gate p { color:var(--muted); font-size:14px; line-height:1.55; }
+    .access-form { display:grid; gap:12px; margin-top:22px; text-align:left; }
+    .access-form label { color:#55667e; font-size:12px; font-weight:700; }
+    .access-form input { width:100%; margin-top:6px; padding:12px; border:1px solid #dbe2ed; border-radius:8px; letter-spacing:1px; }
+    .access-form button { padding:12px; border:0; border-radius:8px; background:var(--blue); color:#fff; font:700 14px "DM Sans",sans-serif; cursor:pointer; }
+    .access-form button:disabled { opacity:.6; cursor:wait; }
+    .access-status { min-height:18px; color:var(--muted); font-size:12px; }
+    .access-status.error { color:#a52b32; }
+    .workspace-exit { margin-left:8px; }
     .container {
       width: 100%;
       max-width: 1120px;
@@ -462,11 +479,23 @@
       .format-options { grid-template-columns: 1fr; }
       .auth-form { grid-template-columns:1fr; }
       .account-bar, .history-item { align-items:flex-start; flex-direction:column; }
+      .access-gate { padding:24px 18px; }
     }
   </style>
 </head>
 <body data-document="proposal">
-  <div class="container">
+  <section class="access-gate" id="accessGate" aria-labelledby="accessTitle">
+    <img src="/wooplix_logo.png" alt="Wooplix Technologies">
+    <h1 id="accessTitle">Private workspace</h1>
+    <p>Enter the access code shared with you to open the proposal and BRD tools.</p>
+    <form class="access-form" id="accessForm">
+      <label for="accessCode">Access code</label>
+      <input id="accessCode" name="code" type="password" inputmode="text" autocomplete="off" minlength="15" maxlength="15" required>
+      <button type="submit" id="accessSubmit">Continue</button>
+      <p class="access-status" id="accessStatus" aria-live="polite"></p>
+    </form>
+  </section>
+  <div class="container" id="appShell" hidden>
     <aside class="sidebar">
       <div class="sidebar-title">Create a document</div>
       <nav class="document-options" aria-label="Choose document type">
@@ -491,6 +520,7 @@
     <section class="account-bar" aria-label="Account">
       <span id="accountMessage">Sign in to keep a private history of your generated documents.</span>
       <div class="account-actions">
+        <button class="small-btn workspace-exit" type="button" id="workspaceSignOutBtn">Exit workspace</button>
         <button class="small-btn" type="button" id="authToggle">Sign in / Create account</button>
         <button class="small-btn" type="button" id="signOutBtn" hidden>Sign out</button>
       </div>
@@ -602,6 +632,13 @@
     const tabFile = document.querySelector('#tabFile');
     const tabText = document.querySelector('#tabText');
     const accountMessage = document.querySelector('#accountMessage');
+    const accessGate = document.querySelector('#accessGate');
+    const appShell = document.querySelector('#appShell');
+    const accessForm = document.querySelector('#accessForm');
+    const accessCode = document.querySelector('#accessCode');
+    const accessSubmit = document.querySelector('#accessSubmit');
+    const accessStatus = document.querySelector('#accessStatus');
+    const workspaceSignOutBtn = document.querySelector('#workspaceSignOutBtn');
     const authToggle = document.querySelector('#authToggle');
     const signOutBtn = document.querySelector('#signOutBtn');
     const authPanel = document.querySelector('#authPanel');
@@ -623,6 +660,55 @@
     let supabaseClient = null;
     let signedInUser = null;
     let createAccountMode = false;
+
+    function setAccessStatus(message, isError=false) {
+      accessStatus.textContent = message;
+      accessStatus.classList.toggle('error', isError);
+    }
+    function showWorkspace(allowed) {
+      accessGate.hidden = allowed;
+      appShell.hidden = !allowed;
+      if (!allowed) accessCode.focus();
+    }
+    async function checkWorkspaceAccess() {
+      try {
+        const response = await fetch('/api/access', { credentials:'same-origin' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Workspace access is not configured. Contact the administrator.');
+        showWorkspace(Boolean(data.allowed));
+        if (data.allowed) initializeSupabase();
+        else setAccessStatus('Use one of your shared access codes.');
+      } catch (error) {
+        showWorkspace(false);
+        setAccessStatus(error.message || 'Workspace access is not configured. Contact the administrator.', true);
+      }
+    }
+    accessForm.onsubmit = async event => {
+      event.preventDefault();
+      accessSubmit.disabled = true;
+      setAccessStatus('Checking code…');
+      try {
+        const response = await fetch('/api/access/login', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          credentials:'same-origin', body:JSON.stringify({code:accessCode.value.trim()})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'That code could not be accepted.');
+        accessCode.value = '';
+        setAccessStatus('');
+        showWorkspace(true);
+        initializeSupabase();
+      } catch (error) {
+        setAccessStatus(error.message || 'Could not verify the code. Please try again.', true);
+      } finally {
+        accessSubmit.disabled = false;
+      }
+    };
+    workspaceSignOutBtn.onclick = async () => {
+      await fetch('/api/access/logout', {method:'POST', credentials:'same-origin'});
+      showWorkspace(false);
+      setAccessStatus('You have exited the workspace.');
+    };
 
     function setAuthNote(message, isError=false) {
       authNote.textContent = message;
@@ -792,7 +878,7 @@
       if (error) accountMessage.textContent = 'Could not sign out. Please try again.';
     };
     refreshHistoryBtn.onclick = loadSavedDocuments;
-    initializeSupabase();
+    checkWorkspaceAccess();
 
     // Tab switching
     tabFile.onclick = () => {
