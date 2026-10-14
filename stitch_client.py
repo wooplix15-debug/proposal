@@ -90,9 +90,11 @@ def build_screen_prompt(brief, page_scope='All pages required by the client brie
             'Include the pages needed to cover each user role and workflow. Do not stop after the dashboard. '
             'Preserve the stated fields, roles, workflows and business rules. Use fictional sample data. '
             'Make the screens polished, accessible, and responsive; no written report and no unrelated extra features. '
-            'Design the requested client application screen directly. Do not add Wooplix branding, a private-workspace page, '
-            'a login screen, or an access-code gate unless the client brief explicitly requires that screen. '
-            'Do not substitute a login page for the requested business screens. '
+            'Design the client application itself; never reproduce the Wooplix proposal/document-generator website. '
+            'Do not show the Wooplix logo, a page titled "Private workspace", the text "Enter the access code shared with you", '
+            'an access-code field, or a "Failed to fetch" access screen. These belong to the generator website, not the client product. '
+            'Do not invent login, password, sign-in, or access-code pages. Include authentication screens only if the client brief '
+            'specifically asks for those screens, and never substitute them for requested business pages. '
             'Use navy and teal unless the brief specifies branding. Page coverage: ' + page_scope + '\n\nBRIEF:\n' + brief)
 
 async def generate(project_id, brief, screen, device):
