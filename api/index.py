@@ -573,14 +573,15 @@ def _build_software_plan_pdf(documents: list[dict], target: Path, host: str | No
 
 def _render_html_pdf(rendered_html: str, target: Path, host: str | None = None) -> None:
     if os.environ.get("VERCEL"):
-        base = host or os.environ.get("VERCEL_PROJECT_PRODUCTION_URL") or os.environ.get("VERCEL_URL")
+        base = os.environ.get("PDF_RENDER_BASE_URL") or "https://proposal-six-kappa.vercel.app"
         token = os.environ.get("PDF_RENDER_TOKEN")
         if not base or not token:
             raise RuntimeError("The PDF renderer is not configured.")
         url = base if base.startswith("http") else f"https://{base}"
         response = requests.post(f"{url.rstrip('/')}/api/pdf.php", json={"html": rendered_html},
                                  headers={"Authorization": f"Bearer {token}"}, timeout=240)
-        response.raise_for_status()
+        if response.status_code != 200 or not response.content.startswith(b"%PDF"):
+            raise RuntimeError("PDF export is unavailable. Choose Word format or try again later.")
         target.write_bytes(response.content)
         return
     php = shutil.which("php")
@@ -790,6 +791,8 @@ async def generate_document(kind: str, request: Request, reviews: str = Form(...
         raise HTTPException(503, str(exc)) from exc
     except HTTPException:
         raise
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
     except Exception as exc:
         print(f"Document generation failed ({kind}): {type(exc).__name__}")
         raise HTTPException(502, "The document could not be created or exported. Please try again.") from exc

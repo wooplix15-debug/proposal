@@ -216,3 +216,8 @@ For a new installation, run `supabase/document_agents.sql` once in the existing 
 SQL Editor. This extends the document type constraint and preserves existing rows.
 The former software pack endpoints remain for compatibility; the pack is no longer
 shown in the sidebar.
+
+The new document tools use the existing authenticated PHP/Dompdf renderer on
+`https://proposal-six-kappa.vercel.app` for Vercel PDF exports. This avoids preview
+host access failures. `PDF_RENDER_BASE_URL` can override that URL; its renderer must
+use the same `PDF_RENDER_TOKEN`. The token remains server-side.

@@ -1,4 +1,6 @@
 import io
+import os
+import tempfile
 import json
 import unittest
 import zipfile
@@ -91,6 +93,23 @@ class IndividualDocumentTests(unittest.TestCase):
                 api.requirements_agent.build_document({'source_text':BRIEF,'questions':[]},{})
         with self.assertRaisesRegex(ValueError,'Answer each question'):
             api.ux_agent.build_document({'source_text':BRIEF,'questions':[{'id':'q1','question':'Who approves?'}]}, {})
+
+    def test_vercel_pdf_uses_authenticated_production_renderer_not_preview_host(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as work, patch.dict(os.environ,{'VERCEL':'1','PDF_RENDER_TOKEN':'test-token'},clear=True), \
+             patch.object(api.requests,'post',return_value=SimpleNamespace(status_code=200,content=b'%PDF sample')) as post:
+            target=Path(work)/'output.pdf'
+            api._render_html_pdf('<h1>Sample</h1>',target,'protected-preview.vercel.app')
+            self.assertEqual(post.call_args.args[0],'https://proposal-six-kappa.vercel.app/api/pdf.php')
+            self.assertEqual(post.call_args.kwargs['headers']['Authorization'],'Bearer test-token')
+            self.assertTrue(target.read_bytes().startswith(b'%PDF'))
+
+    def test_pdf_rejects_non_pdf_response_with_clear_feedback(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as work, patch.dict(os.environ,{'VERCEL':'1','PDF_RENDER_TOKEN':'test-token'},clear=True), \
+             patch.object(api.requests,'post',return_value=SimpleNamespace(status_code=401,content=b'Unauthorized')):
+            with self.assertRaisesRegex(RuntimeError,'Choose Word'):
+                api._render_html_pdf('<h1>Sample</h1>',Path(work)/'output.pdf')
 
     def test_generation_requires_access(self):
         res=self.client.post('/api/documents/ux/generate',data={'reviews':'[]'})
