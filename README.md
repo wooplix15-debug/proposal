@@ -194,3 +194,25 @@ The software planning tool asks up to three important follow-up questions and ke
 For the software planning output, **Eight PDFs (ZIP)** downloads the eight separate PDFs, **Eight Word files (ZIP)** downloads eight editable DOCX documents, and **All files (ZIP)** includes both formats, JSON source files, and `run-summary.json`. The filenames follow the sequence `01-requirements` through `08-handover`. Saved document history labels this as a Software Planning Pack. If Supabase is already set up, rerun [`supabase/setup.sql`](supabase/setup.sql) to allow the `software_plan` document type; the script updates the existing constraint safely.
 
 The new routes are `/api/software-plan/analyze` and `/api/software-plan/generate`. They require the same private workspace access code and Groq configuration as the other document tools.
+
+
+### Individual document agents
+
+The sidebar offers eight document workspaces: Proposal, BRD, Requirements,
+UI/UX, Implementation, QA/UAT, Documentation and Training, and Handover.
+The six added tools each have their own Python module (`requirements_agent.py`,
+`ux_agent.py`, `implementation_agent.py`, `qa_agent.py`, `documentation_agent.py`,
+`handover_agent.py`), focus, follow-up questions, and section structure.
+They share LLM transport and Wooplix formatting through `document_agent_common.py`.
+They do not run the software pack, Proposal, or BRD agents.
+
+Each tool accepts uploaded requirements or pasted text, asks at most two essential
+questions, and generates only its selected document. PDF and Word download directly;
+ZIP contains just that document's PDF and Word files. Reviews are signed and bound
+to the selected tool, so a review cannot be reused for another document type.
+The existing Proposal and BRD workflows remain separately available.
+
+For a new installation, run `supabase/document_agents.sql` once in the existing project's
+SQL Editor. This extends the document type constraint and preserves existing rows.
+The former software pack endpoints remain for compatibility; the pack is no longer
+shown in the sidebar.

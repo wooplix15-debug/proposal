@@ -25,6 +25,18 @@ import project_records
 from proposal_scope import finalize_client_content
 import business_requirements_agent as brd_agent
 import software_planning_agent as software_plan_agent
+import document_agent_common as document_common
+import requirements_agent
+import ux_agent
+import implementation_agent
+import qa_agent
+import documentation_agent
+import handover_agent
+DOCUMENT_AGENTS = {
+    "requirements": requirements_agent, "ux": ux_agent,
+    "implementation": implementation_agent, "qa": qa_agent,
+    "documentation": documentation_agent, "handover": handover_agent,
+}
 
 app = FastAPI(title="Wooplix Proposal Agent")
 MAX_FILES = 5
@@ -556,7 +568,10 @@ async def analyze_software_plan(request: Request,
 
 
 def _build_software_plan_pdf(documents: list[dict], target: Path, host: str | None = None) -> None:
-    rendered_html = software_plan_agent.build_bundle_html(documents)
+    _render_html_pdf(software_plan_agent.build_bundle_html(documents), target, host)
+
+
+def _render_html_pdf(rendered_html: str, target: Path, host: str | None = None) -> None:
     if os.environ.get("VERCEL"):
         base = host or os.environ.get("VERCEL_PROJECT_PRODUCTION_URL") or os.environ.get("VERCEL_URL")
         token = os.environ.get("PDF_RENDER_TOKEN")
@@ -685,3 +700,96 @@ async def generate_software_plan(request: Request, reviews: str = Form(...)):
     except Exception as exc:
         print(f"Software planning export failed: {type(exc).__name__}")
         raise HTTPException(502, "Could not export the software planning pack. Check PDF/DOCX support and try again.") from exc
+
+
+@app.post("/api/documents/{kind}/analyze")
+@app.post("/api/index.py/documents/{kind}/analyze")
+async def analyze_document(kind: str, request: Request,
+                           files: Optional[List[UploadFile]] = File(None),
+                           text: Optional[str] = Form(None),
+                           project_name: Optional[str] = Form(None)):
+    _require_allowed_user(request)
+    builder = DOCUMENT_AGENTS.get(kind)
+    if builder is None:
+        raise HTTPException(404, "Choose a supported document type.")
+    if not agent.GROQ_API_KEY:
+        raise HTTPException(503, "Document analysis is unavailable. Please contact the administrator.")
+    if len(files or []) > MAX_FILES:
+        raise HTTPException(400, "Upload at most five requirement files.")
+    if len(project_name or "") > 120:
+        raise HTTPException(400, "Project name must be 120 characters or fewer.")
+    with tempfile.TemporaryDirectory(prefix="wooplix-document-analysis-") as work:
+        sources = await _extract_uploads(files, work, "requirement")
+    if text and text.strip():
+        sources.append({"source": "Pasted requirement", "text": text.strip()})
+    if not sources:
+        raise HTTPException(400, "Upload a requirement or paste its text.")
+    brief = "\n\n".join(row["text"] for row in sources)
+    try:
+        analysis = builder.analyze(brief, project_name or "")
+        analysis["source"] = ", ".join(row["source"] for row in sources)
+        analysis["review_token"] = workflow.seal({"document_kind": kind, "analysis": analysis})
+        return {"reviews": [analysis], "notices": [], "evidence_note": ""}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except workflow.AnalysisServiceError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:
+        print(f"Document analysis failed ({kind}): {type(exc).__name__}")
+        raise HTTPException(502, "Analysis could not finish. Please try again.") from exc
+
+
+@app.post("/api/documents/{kind}/generate")
+@app.post("/api/index.py/documents/{kind}/generate")
+async def generate_document(kind: str, request: Request, reviews: str = Form(...)):
+    _require_allowed_user(request)
+    builder = DOCUMENT_AGENTS.get(kind)
+    if builder is None:
+        raise HTTPException(404, "Choose a supported document type.")
+    fmt = (request.query_params.get("format") or "pdf").lower()
+    if fmt not in {"pdf", "docx", "zip"}:
+        raise HTTPException(400, "Choose PDF, Word or ZIP format.")
+    if not agent.GROQ_API_KEY:
+        raise HTTPException(503, "Document generation is unavailable. Please contact the administrator.")
+    try:
+        rows = json.loads(reviews)
+        if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
+            raise ValueError("Analyze one document at a time.")
+        row = rows[0]
+        context = workflow.unseal(row["review_token"])
+        if context.get("document_kind") != kind:
+            raise ValueError("This review belongs to a different document. Analyze the requirement again.")
+        document = builder.build_document(context["analysis"], row.get("answers", {}))
+        stem = "Wooplix_" + kind.title() + "_" + _safe_name(document.get("project_name") or "Document")
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+        with tempfile.TemporaryDirectory(prefix="wooplix-document-") as work:
+            word = Path(work) / (stem + ".docx")
+            pdf = Path(work) / (stem + ".pdf")
+            if fmt in {"docx", "zip"}:
+                document_common.build_docx(document, str(word))
+            if fmt in {"pdf", "zip"}:
+                _render_html_pdf(document_common.build_html(document), pdf, host)
+            if fmt == "zip":
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
+                    archive.write(word, word.name)
+                    archive.write(pdf, pdf.name)
+                payload, mime = buf.getvalue(), "application/zip"
+            else:
+                payload = (pdf if fmt == "pdf" else word).read_bytes()
+                mime = "application/pdf" if fmt == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        filename = stem + "." + fmt
+        return StreamingResponse(io.BytesIO(payload), media_type=mime,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"',
+                     "X-Proposal-Filename": filename,
+                     "X-Proposal-Client": document.get("project_name") or builder.TITLE,
+                     "Access-Control-Expose-Headers": "Content-Disposition, X-Proposal-Filename, X-Proposal-Client"})
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except workflow.AnalysisServiceError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"Document generation failed ({kind}): {type(exc).__name__}")
+        raise HTTPException(502, "The document could not be created or exported. Please try again.") from exc

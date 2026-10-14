@@ -10,3 +10,5 @@ output/
 tmp/
 .vercel/
 .python-version
+
+sample_outputs/

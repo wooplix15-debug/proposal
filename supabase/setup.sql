@@ -18,7 +18,7 @@ alter table public.generated_documents
     drop constraint if exists generated_documents_document_type_check;
 alter table public.generated_documents
     add constraint generated_documents_document_type_check
-    check (document_type in ('proposal', 'brd', 'software_plan'));
+    check (document_type in ('proposal', 'brd', 'software_plan', 'requirements', 'ux', 'implementation', 'qa', 'documentation', 'handover'));
 
 alter table public.generated_documents enable row level security;
 revoke all on table public.generated_documents from anon;

@@ -31,12 +31,18 @@
       --accent-soft: #eaf7f4;
       --accent-line: #99d6cc;
     }
-    body[data-document="software_plan"] {
-      --blue: #6b4bc3;
-      --blue-hover: #573aa8;
-      --accent-soft: #f1edfb;
-      --accent-line: #c9bce9;
-    }
+    body[data-document="requirements"] { --blue: #7c3aed; --blue-hover: #7c3aed; --accent-soft: #f1f5f9; --accent-line: #cbd5e1; }
+    .document-option[data-document="requirements"]::before { background:#7c3aed; }
+    body[data-document="ux"] { --blue: #9333ea; --blue-hover: #9333ea; --accent-soft: #f1f5f9; --accent-line: #cbd5e1; }
+    .document-option[data-document="ux"]::before { background:#9333ea; }
+    body[data-document="implementation"] { --blue: #2563eb; --blue-hover: #2563eb; --accent-soft: #f1f5f9; --accent-line: #cbd5e1; }
+    .document-option[data-document="implementation"]::before { background:#2563eb; }
+    body[data-document="qa"] { --blue: #b45309; --blue-hover: #b45309; --accent-soft: #f1f5f9; --accent-line: #cbd5e1; }
+    .document-option[data-document="qa"]::before { background:#b45309; }
+    body[data-document="documentation"] { --blue: #0e7490; --blue-hover: #0e7490; --accent-soft: #f1f5f9; --accent-line: #cbd5e1; }
+    .document-option[data-document="documentation"]::before { background:#0e7490; }
+    body[data-document="handover"] { --blue: #475569; --blue-hover: #475569; --accent-soft: #f1f5f9; --accent-line: #cbd5e1; }
+    .document-option[data-document="handover"]::before { background:#475569; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background: var(--bg);
@@ -108,7 +114,6 @@
     .document-option:hover { background:#f7f9fd; }
     .document-option::before { content:""; position:absolute; left:11px; top:17px; width:6px; height:6px; border-radius:50%; background:#2d5ccb; }
     .document-option[data-document="brd"]::before { background:#0f766e; }
-    .document-option[data-document="software_plan"]::before { background:#6b4bc3; }
     .document-option.active { border-color:var(--accent-line); background:var(--accent-soft); color:var(--blue); }
     .workspace { min-width:0; width:100%; }
     @media (max-width: 760px) {
@@ -518,9 +523,29 @@
           <strong>Business Requirements Document</strong>
           <span>Detailed requirements, data, integrations, rules and open decisions.</span>
         </button>
-        <button type="button" class="document-option" data-document="software_plan" aria-pressed="false">
-          <strong>Software Planning Pack</strong>
-          <span>Plan user journeys, development, testing, training and handover.</span>
+        <button type="button" class="document-option" data-document="requirements" aria-pressed="false">
+          <strong>Requirements Document</strong>
+          <span>Organize goals, scope, roles and acceptance criteria.</span>
+        </button>
+        <button type="button" class="document-option" data-document="ux" aria-pressed="false">
+          <strong>UI/UX Document</strong>
+          <span>Define screens, navigation and user journeys.</span>
+        </button>
+        <button type="button" class="document-option" data-document="implementation" aria-pressed="false">
+          <strong>Implementation Plan</strong>
+          <span>Plan architecture, integrations and development tasks.</span>
+        </button>
+        <button type="button" class="document-option" data-document="qa" aria-pressed="false">
+          <strong>QA and UAT Plan</strong>
+          <span>Create test scenarios and acceptance checks.</span>
+        </button>
+        <button type="button" class="document-option" data-document="documentation" aria-pressed="false">
+          <strong>Documentation and Training</strong>
+          <span>Create user guides and practical training steps.</span>
+        </button>
+        <button type="button" class="document-option" data-document="handover" aria-pressed="false">
+          <strong>Project Handover</strong>
+          <span>Prepare delivery, ownership and support checklists.</span>
         </button>
       </nav>
     </aside>
@@ -678,6 +703,7 @@
 
     let selectedFile = null;
     let selectedFormat = 'pdf';
+    const documentTools = {"requirements": {"title": "Requirements Document", "description": "Organize goals, scope, roles and acceptance criteria."}, "ux": {"title": "UI/UX Document", "description": "Define screens, navigation and user journeys."}, "implementation": {"title": "Implementation Plan", "description": "Plan architecture, integrations and development tasks."}, "qa": {"title": "QA and UAT Plan", "description": "Create test scenarios and acceptance checks."}, "documentation": {"title": "Documentation and Training", "description": "Create user guides and practical training steps."}, "handover": {"title": "Project Handover", "description": "Prepare delivery, ownership and support checklists."}};
     let selectedDocument = 'proposal';
     let activeTab = 'file';
     let supabaseClient = null;
@@ -773,7 +799,7 @@
         element('div', row.title, details).className = 'history-title';
         const date = new Date(row.created_at).toLocaleString();
         const historyLabel = row.document_type === 'brd' ? 'Business requirements document'
-          : row.document_type === 'software_plan' ? 'Software planning pack' : 'Project proposal';
+          : documentTools[row.document_type]?.title || (row.document_type === 'software_plan' ? 'Software planning pack' : 'Project proposal');
         element('div', `${historyLabel} · ${date}`, details).className = 'history-meta';
         const actions = element('div', '', item);
         actions.className = 'history-item-actions';
@@ -823,7 +849,7 @@
         .upload(storagePath, blob, { contentType, upsert: false });
       if (uploadError) throw uploadError;
       const label = documentType === 'brd' ? 'Business Requirements Document'
-        : documentType === 'software_plan' ? 'Software Planning Pack' : 'Project Proposal';
+        : documentTools[documentType]?.title || 'Project Proposal';
       const { error: recordError } = await supabaseClient.from('generated_documents').insert({
         id: documentId,
         user_id: signedInUser.id,
@@ -951,24 +977,23 @@
         invalidateReview();
         selectedDocument = btn.dataset.document;
         const isBrd = selectedDocument === 'brd';
-        const isSoftwarePlan = selectedDocument === 'software_plan';
+        const focusedTool = documentTools[selectedDocument];
+        const isFocused = Boolean(focusedTool);
         document.body.dataset.document = selectedDocument;
-        document.querySelector('#documentBadge').textContent = isBrd ? 'BRD workspace' : isSoftwarePlan ? 'Software planning workspace' : 'Proposal workspace';
+        document.querySelector('#documentBadge').textContent = isBrd ? 'BRD workspace' : isFocused ? focusedTool.title + ' workspace' : 'Proposal workspace';
         document.querySelector('#documentTitle').textContent = isBrd
-          ? 'Create a business requirements document.' : isSoftwarePlan ? 'Plan a software project.' : 'Create a project proposal.';
+          ? 'Create a business requirements document.' : isFocused ? 'Create your ' + focusedTool.title + '.' : 'Create a project proposal.';
         document.querySelector('#documentDescription').textContent = isBrd
           ? 'Detail the processes, fields, business rules and approvals for your project.'
-          : isSoftwarePlan ? 'Turn your requirements into a practical, reviewable delivery plan.'
+          : isFocused ? focusedTool.description
           : 'Define the scope, timeline and commercial items for your client.';
-        document.title = isBrd ? 'Wooplix Business Requirements Document' : isSoftwarePlan ? 'Wooplix Software Planning Pack' : 'Wooplix Project Proposal';
+        document.title = isBrd ? 'Wooplix Business Requirements Document' : isFocused ? 'Wooplix ' + focusedTool.title : 'Wooplix Project Proposal';
         projectNameField.hidden = isBrd;
-        projectNameField.querySelector('label').textContent = isSoftwarePlan ? 'Project name (optional)' : 'Project name (optional)';
+        projectNameField.querySelector('label').textContent = 'Project name (optional)';
         projectNameField.querySelector('p').textContent = 'If the requirement does not name the project, leave this blank to keep the title blank.';
         document.querySelectorAll('.format-btn').forEach(formatButton => {
           const fmt = formatButton.dataset.fmt;
-          formatButton.textContent = isSoftwarePlan
-            ? (fmt === 'pdf' ? '📄 Eight PDFs (ZIP)' : fmt === 'docx' ? '📝 Eight Word files (ZIP)' : '📦 All files (ZIP)')
-            : (fmt === 'pdf' ? '📄 PDF Document' : fmt === 'docx' ? '📝 Word (DOCX)' : '📦 All Files (ZIP)');
+          formatButton.textContent = fmt === 'pdf' ? '📄 PDF Document' : fmt === 'docx' ? '📝 Word (DOCX)' : '📦 PDF + Word (ZIP)';
         });
         resultBox.style.display = 'none';
         statusMsg.textContent = '';
@@ -979,9 +1004,9 @@
         });
         finishBtn.textContent = selectedDocument === 'brd'
           ? 'Create Business Requirements Document →'
-          : isSoftwarePlan ? 'Create software planning pack →' : 'Generate proposal with these answers →';
+          : isFocused ? 'Create ' + focusedTool.title + ' →' : 'Generate proposal with these answers →';
         resultBox.querySelector('.result-badge').textContent = selectedDocument === 'brd'
-          ? '✓ Business Requirements Document Ready' : isSoftwarePlan ? '✓ Software Planning Pack Ready' : '✓ Proposal Ready';
+          ? '✓ Business Requirements Document Ready' : isFocused ? '✓ ' + focusedTool.title + ' Ready' : '✓ Proposal Ready';
       };
     });
 
@@ -1054,10 +1079,10 @@
         if (review.source !== 'Pasted requirement') element('h4', review.source, box);
         element('p',review.summary,box);
         if (review.requirement_sections && review.requirement_sections.length) {
-          element('h4', selectedDocument === 'software_plan' ? 'Requirements found' : 'Scope included',box);
+          element('h4', documentTools[selectedDocument] ? 'Requirements found' : 'Scope included',box);
           const list=element('ul','',box);
           review.requirement_sections.forEach(s=>{
-            if (selectedDocument === 'software_plan') {
+            if (documentTools[selectedDocument]) {
               (s.requirements || []).forEach(requirement => element('li', requirement, list));
             } else element('li',s.product,list);
           });
@@ -1095,12 +1120,12 @@
       if(activeTab==='file' && selectedFile) fd.append('files',selectedFile,selectedFile.name);
       else if(activeTab==='text' && requirementText.value.trim()) fd.append('text',requirementText.value.trim());
       else return;
-      if(['proposal','software_plan'].includes(selectedDocument) && projectNameInput.value.trim()) fd.append('project_name', projectNameInput.value.trim());
+      if(selectedDocument !== 'brd' && projectNameInput.value.trim()) fd.append('project_name', projectNameInput.value.trim());
       busy=true;generateBtn.disabled=true;invalidateReview();
       const analyzedRevision = inputRevision;
       statusMsg.textContent='Analyzing your requirements…';
       try {
-        const analysisEndpoint = selectedDocument === 'software_plan' ? '/api/software-plan/analyze' : '/api/analyze';
+        const analysisEndpoint = documentTools[selectedDocument] ? `/api/documents/${selectedDocument}/analyze` : '/api/analyze';
         const res=await fetch(analysisEndpoint,{method:'POST',body:fd});
         const data=await res.json();if(!res.ok)throw new Error(data.detail||'Analysis failed.');
         if (analyzedRevision !== inputRevision) throw new Error('The input changed during analysis. Analyze the latest input again.');
@@ -1125,10 +1150,10 @@
       const fd=new FormData();fd.append('reviews',JSON.stringify(payload));
       busy=true;finishBtn.disabled=true;generateBtn.disabled=true;
       const brd = selectedDocument === 'brd';
-      const softwarePlan = selectedDocument === 'software_plan';
-      statusMsg.textContent=brd ? 'Creating your Business Requirements Document…' : softwarePlan ? 'Creating your software planning pack…' : 'Creating your proposal…';
+      const focusedTool = documentTools[selectedDocument];
+      statusMsg.textContent=brd ? 'Creating your Business Requirements Document…' : focusedTool ? 'Creating your ' + focusedTool.title + '…' : 'Creating your proposal…';
       try {
-        const endpoint = brd ? '/api/brd/generate' : softwarePlan ? '/api/software-plan/generate' : '/api/generate';
+        const endpoint = brd ? '/api/brd/generate' : focusedTool ? `/api/documents/${selectedDocument}/generate` : '/api/generate';
         const res=await fetch(`${endpoint}?format=${selectedFormat}`,{method:'POST',body:fd});
         if(!res.ok){const err=await res.json();throw new Error(err.detail||'Generation failed.');}
         const filename=res.headers.get('x-proposal-filename')||'Wooplix_Results.zip';
@@ -1150,7 +1175,7 @@
         }
         statusMsg.textContent=(brd
           ? 'Business Requirements Document downloaded. Review it with the project team.'
-          : softwarePlan ? 'Software planning pack downloaded. Review the plan before implementation.'
+          : focusedTool ? focusedTool.title + ' downloaded. Review it before sharing.'
           : 'Proposal downloaded. Review it before sharing.')+historyMessage;
       }catch(err){statusMsg.textContent=err.message;}
       finally{busy=false;finishBtn.disabled=false;updateSubmitState();}
