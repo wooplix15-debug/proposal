@@ -34,6 +34,14 @@ class IndividualDocumentTests(unittest.TestCase):
             doc=api.ux_agent.build_document({'source_text':BRIEF,'questions':[]},{})
             self.assertEqual(list(doc['content']),api.ux_agent.SECTIONS)
 
+    def test_analysis_never_exposes_model_objects_and_omits_project_heading(self):
+        with patch.object(common,'_call',return_value={'summary':{'internal':'must not appear'},'questions':[]}):
+            analysis=api.qa_agent.analyze(BRIEF)
+        self.assertNotIn('internal',analysis['summary'])
+        self.assertEqual(analysis['project_name'],'Booking Portal')
+        items=analysis['requirement_sections'][0]['requirements']
+        self.assertFalse(any('Project:' in item for item in items))
+
     def test_signed_review_is_bound_to_selected_agent(self):
         analysis = {'summary':'Booking','questions':[],'source_text':BRIEF}
         with patch.object(api, '_require_allowed_user'), patch.object(api.agent, 'GROQ_API_KEY','test-key'), \

@@ -53,7 +53,7 @@ def _source_lines(text: str) -> list[str]:
         if row.casefold() not in {x.casefold() for x in rows}:
             rows.append(row)
     if len(rows) <= 1:
-        rows = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if len(s.strip()) >= 12]
+        rows = [s.strip() for s in re.split(r"(?<=[.!?])\s+", rows[0] if rows else text) if len(s.strip()) >= 12]
     return rows[:MAX_REQUIREMENTS]
 
 
@@ -112,7 +112,9 @@ def analyze(text, project_name, title, focus):
             questions.append({"id":f"q{len(questions)+1}","question":_clean(row["question"],500),
                               "reason":_clean(row.get("reason"),500),"options":options})
     client=re.search(r"(?im)^\s*(?:company name|client name|client)\s*:\s*(.{2,120})$",text)
-    return {"summary":_clean(result.get("summary")),"questions":questions,
+    summary = result.get("summary")
+    summary = _clean(summary) if isinstance(summary,str) else f"Requirements reviewed for the {title}."
+    return {"summary":summary,"questions":questions,
             "project_name":_clean(project_name,120) or _explicit_project_name(text),
             "client_name":_clean(client.group(1),120) if client else "",
             "source_text":text,"source":"Uploaded requirement",
