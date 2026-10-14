@@ -52,7 +52,9 @@
   document.querySelectorAll('.document-option').forEach(button=> {
     const original=button.onclick;
     button.onclick=async event=> {
-      if(designBusy||busy)return;
+      // `busy` belongs to the inline app script's closure and is not visible here.
+      // Calling the original handler lets it enforce its own busy guard.
+      if(designBusy)return;
       original.call(button,event);
       const selected=button.dataset.document==='ui_design';panel.hidden=!selected;card.hidden=selected;
       if(selected) {
