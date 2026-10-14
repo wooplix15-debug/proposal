@@ -221,3 +221,73 @@ The new document tools use the existing authenticated PHP/Dompdf renderer on
 `https://proposal-six-kappa.vercel.app` for Vercel PDF exports. This avoids preview
 host access failures. `PDF_RENDER_BASE_URL` can override that URL; its renderer must
 use the same `PDF_RENDER_TOKEN`. The token remains server-side.
+
+### Google Stitch UI design (new branch)
+
+The **Generate UI Design** sidebar option accepts an approved BRD or requirements
+as PDF, DOC/DOCX, TXT, Markdown, or pasted text. It generates one selected screen
+through Google's hosted Stitch MCP server, previews its actual HTML and original
+screenshot, and downloads a ZIP with local HTML, screenshots and an asset manifest.
+Existing Proposal, BRD and individual document agents use their existing workflows.
+
+Local setup:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn api.index:app --host 127.0.0.1 --port 8777
+```
+
+Add `STITCH_API_KEY` to the ignored `.env` file in the checkout. Obtain it through
+Stitch's Settings/API Keys page. Do not put it in frontend code or commit it.
+Alternatively, set both `STITCH_ACCESS_TOKEN` and `GOOGLE_CLOUD_PROJECT` for OAuth.
+OAuth access tokens expire and must be refreshed manually with this configuration.
+The app does not currently implement an OAuth refresh flow.
+
+Open `http://127.0.0.1:8777`, enter an existing workspace access code, select
+**Generate UI Design**, provide the BRD, select a screen and device, then generate.
+A BRD can be uploaded after it has been reviewed and approved; this feature does
+not itself grant approval. Generation sends its supplied requirements to Google Stitch.
+
+`stitch_client.py` uses the official MCP Python SDK and Stitch's documented tools.
+`stitch_export.py` downloads artifacts from approved Google/asset hosts, embeds
+styles, fonts and images, and removes arbitrary executable content. `stitch_ui.js`
+provides the isolated workflow. Preview frames use `sandbox="allow-scripts"`
+without same-origin permission, plus a restrictive content security policy.
+The export is a visual prototype, not a functional application or production code.
+
+The lightweight `GEMINI_3_5_FLASH_LITE` model is the default. `STITCH_MODEL` can
+select another model supported by your account. Actual quota and billing depend
+on your Stitch account; the integration cannot guarantee that generation is free.
+Generation calls are never automatically retried. **Check status** makes only
+read calls and can retry artifact downloads without generating another screen.
+If Stitch needs clarification, its message is shown when available; review the
+project in Stitch before requesting another generation.
+
+Unzip the download and open `index.html` to view the included screens. The exported
+screenshots are offline files. HTML uses bundled assets and a local Tailwind runtime
+when present in the original design. `manifest.json` records whether assets were
+fully bundled and lists any missing fonts, images, styles or removed custom scripts.
+A warning means some visual or interactive behavior may differ. No API keys or
+provider download links are included in the export.
+
+Ready artifacts use a bounded 15-minute in-memory cache to avoid downloading
+fonts and images again for each export. A server restart or cold instance fetches
+them again through read-only calls. Sessions are signed and expire after one hour. A browser refresh can retain the
+session token in the same tab. Screens are stored by Stitch, not by Supabase in this
+first integration. When the provider does not index a pending generation yet,
+**Check status** may remain pending; no duplicate generation is started automatically.
+
+For Vercel, configure the same server-only Stitch environment variable on the
+chosen preview deployment. A generation and asset export must finish within the
+existing 300-second function limit; slow provider jobs may need status recovery.
+This branch was tested locally; its automatic Git preview needs its own environment
+configuration and is not assumed to be production-ready without a deployment test.
+
+Official references:
+- https://stitch.withgoogle.com/docs/mcp/setup
+- https://github.com/google-labs-code/stitch-sdk
+- https://github.com/modelcontextprotocol/python-sdk
+
+Regression tests: `python -m unittest discover -s tests -v`.

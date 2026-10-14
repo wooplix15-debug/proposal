@@ -2,7 +2,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 300,
-      "includeFiles": "{project_delivery_data.json,market_delivery_benchmarks.json}"
+      "includeFiles": "{project_delivery_data.json,market_delivery_benchmarks.json,stitch_ui.js}"
     },
     "api/pdf.php": {
       "runtime": "vercel-php@0.9.0"

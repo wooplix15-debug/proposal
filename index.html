@@ -497,6 +497,11 @@
       .account-bar, .history-item { align-items:flex-start; flex-direction:column; }
       .access-gate { padding:24px 18px; }
     }
+    #stitchPanel label {display:block;margin-top:16px;font-weight:600;}
+    #stitchPanel select, #stitchPanel input[type=file] {width:100%;padding:12px;border:1px solid #dbe2ed;border-radius:8px;background:white;margin:8px 0;}
+    #stitchPreviews section {margin:24px 0;} #stitchPreviews h3 {margin-bottom:12px;}
+    #stitchPreviews p {margin:12px 0;color:#475569;}
+    body[data-document="ui_design"] {--blue:#6b4bc3;--blue-hover:#573aa8;--accent-soft:#f1edfb;--accent-line:#c9bce9;}
   </style>
 </head>
 <body data-document="proposal">
@@ -547,6 +552,10 @@
           <strong>Project Handover</strong>
           <span>Prepare delivery, ownership and support checklists.</span>
         </button>
+        <button type="button" class="document-option" data-document="ui_design" aria-pressed="false">
+          <strong>Generate UI Design</strong>
+          <span>Create actual screens from a BRD with Google Stitch.</span>
+        </button>
       </nav>
     </aside>
     <main class="workspace">
@@ -590,7 +599,7 @@
       <p id="documentDescription">Define the scope, timeline and commercial items for your client.</p>
     </div>
 
-    <div class="card">
+    <div class="card" id="documentCard">
 
       <!-- Tab switcher -->
       <div class="tab-bar">
@@ -654,6 +663,21 @@
       </div>
     </div>
 
+    <section class="card" id="stitchPanel" hidden>
+      <form id="stitchForm">
+        <div class="project-name-field"><label for="stitchFile">Approved BRD or requirement file</label><input id="stitchFile" name="files" type="file" accept=".pdf,.docx,.doc,.txt,.md"><p>PDF, Word, TXT or Markdown. Up to 4 MB.</p></div>
+        <label for="stitchBrief">Or paste the BRD / requirements</label><textarea id="stitchBrief" name="text" rows="8" maxlength="40000" placeholder="Paste the approved requirements for your interface."></textarea>
+        <div class="project-name-field"><label for="stitchTitle">Project name (optional)</label><input id="stitchTitle" name="title" maxlength="120"></div>
+        <div class="project-name-field"><label for="stitchScreen">Which screen should we design?</label><input id="stitchScreen" name="screen" maxlength="1000" value="Main dashboard" required><p>One screen per generation keeps quota usage low.</p></div>
+        <label for="stitchDevice">Device</label><select id="stitchDevice" name="device"><option value="DESKTOP">Desktop</option><option value="MOBILE">Mobile</option><option value="TABLET">Tablet</option></select>
+        <button class="submit-btn" id="stitchGenerate" type="submit">Generate UI Design →</button>
+      </form>
+      <p class="status-msg" id="stitchStatus" role="status" aria-live="polite"></p>
+      <button class="small-btn" id="stitchCheck" type="button" hidden>Check status</button>
+      <button class="small-btn" id="stitchDownload" type="button" hidden>Download HTML + screenshots</button>
+      <button class="small-btn" id="stitchReset" type="button">Start another design</button>
+      <div id="stitchPreviews" style="margin-top:20px"></div>
+    </section>
     <footer class="footer">
       © Wooplix Technologies Private Limited
     </footer>
@@ -1181,5 +1205,6 @@
       finally{busy=false;finishBtn.disabled=false;updateSubmitState();}
     };
   </script>
+  <script src="/stitch_ui.js"></script>
 </body>
 </html>

@@ -796,3 +796,123 @@ async def generate_document(kind: str, request: Request, reviews: str = Form(...
     except Exception as exc:
         print(f"Document generation failed ({kind}): {type(exc).__name__}")
         raise HTTPException(502, "The document could not be created or exported. Please try again.") from exc
+
+
+# Google Stitch integration; existing document routes remain independent.
+import stitch_client
+import stitch_export
+
+@app.get("/stitch_ui.js")
+def stitch_script():
+    return FileResponse(Path(__file__).resolve().parents[1] / "stitch_ui.js", media_type="application/javascript")
+
+@app.get("/api/ui-design/config")
+@app.get("/api/index.py/ui-design/config")
+def ui_design_config(request: Request):
+    _require_allowed_user(request)
+    return {"configured": stitch_client.configured(), "provider": "Google Stitch"}
+
+@app.post("/api/ui-design/prepare")
+@app.post("/api/index.py/ui-design/prepare")
+async def prepare_ui_design(request: Request, files: Optional[List[UploadFile]] = File(None),
+                            text: Optional[str] = Form(None), title: str = Form(""),
+                            screen: str = Form("Main dashboard"), device: str = Form("DESKTOP")):
+    _require_allowed_user(request)
+    if not stitch_client.configured():
+        raise HTTPException(503, "Add STITCH_API_KEY to the server environment before generating designs.")
+    if len(files or []) > MAX_FILES:
+        raise HTTPException(400, "Upload at most five BRD files.")
+    if len(title) > 120 or not screen.strip() or len(screen) > 1000:
+        raise HTTPException(400, "Enter a project title under 120 characters and a screen description under 1,000 characters.")
+    if device not in {"DESKTOP", "MOBILE", "TABLET"}:
+        raise HTTPException(400, "Choose Desktop, Mobile or Tablet.")
+    with tempfile.TemporaryDirectory(prefix="wooplix-ui-design-") as work:
+        sources = await _extract_uploads(files, work, "brd")
+    if text and text.strip(): sources.append({"source": "Pasted BRD", "text": text.strip()})
+    brief = "\n\n".join(row["text"] for row in sources)
+    if not 20 <= len(brief) <= 40000:
+        raise HTTPException(400, "Upload or paste a readable BRD between 20 and 40,000 characters.")
+    try:
+        project = await stitch_client.create_project(title.strip())
+        token = workflow.seal({"ui_design": True, "project_id": project, "brief": brief,
+                               "screen": screen.strip(), "device": device})
+        return {"project_token": token, "project_id": project}
+    except stitch_client.StitchError as exc:
+        raise HTTPException(exc.status, {"message": str(exc), "code": exc.code}) from None
+
+
+def _ui_context(token):
+    try:
+        context = workflow.unseal(token)
+        if context.get("ui_design") is not True: raise ValueError("Wrong review type")
+        return context
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(400, "The design session expired or is invalid. Prepare the BRD again.") from None
+
+from collections import OrderedDict
+_UI_CACHE = OrderedDict()
+
+def _cache_ui(context, result):
+    key = (context["project_id"], tuple(context.get("screen_names", [])))
+    _UI_CACHE[key] = (time.monotonic(), result)
+    _UI_CACHE.move_to_end(key)
+    while len(_UI_CACHE) > 4: _UI_CACHE.popitem(last=False)
+
+async def _ui_results(context):
+    key = (context["project_id"], tuple(context.get("screen_names", [])))
+    cached = _UI_CACHE.get(key)
+    if cached and time.monotonic() - cached[0] < 900:
+        return cached[1]
+    rows = await stitch_client.screens(context["project_id"], context.get("screen_names"))
+    if not rows: return {"status": "pending", "screens": [], "message": "No finished screen yet. Check status again; generation is not repeated."}
+    screens = await stitch_export.assemble(rows)
+    result = {"status": "ready", "screens": screens}
+    _cache_ui(context, result)
+    return result
+
+@app.post("/api/ui-design/generate")
+@app.post("/api/index.py/ui-design/generate")
+async def generate_ui_design(request: Request, project_token: str = Form(...)):
+    _require_allowed_user(request)
+    context = _ui_context(project_token)
+    try:
+        result = await stitch_client.generate(context["project_id"], context["brief"], context["screen"], context["device"])
+        generated = stitch_client.generated_screens(result)
+        if generated:
+            context["screen_names"] = [row["name"] for row in generated]
+            project_token = workflow.seal(context)
+            completed = {"status":"ready", "screens": await stitch_export.assemble(generated),
+                         "project_token":project_token}
+            _cache_ui(context, completed)
+        else:
+            completed = await _ui_results(context)
+            messages = [c.get("text", "") for c in result.get("outputComponents", []) if isinstance(c,dict)]
+            completed["provider_message"] = "\n".join(x for x in messages if isinstance(x,str))[:1500]
+        if completed["status"] != "ready":
+            completed["message"] = "Stitch has not produced a downloadable screen yet. Check status, or review the project in Stitch for a clarification."
+        return completed
+    except stitch_client.StitchError as exc:
+        raise HTTPException(exc.status, {"message": str(exc), "code": exc.code, "project_token": project_token}) from None
+
+@app.post("/api/ui-design/status")
+@app.post("/api/index.py/ui-design/status")
+async def ui_design_status(request: Request, project_token: str = Form(...)):
+    _require_allowed_user(request)
+    context = _ui_context(project_token)
+    try: return await _ui_results(context)
+    except stitch_client.StitchError as exc:
+        raise HTTPException(exc.status, {"message": str(exc), "code": exc.code}) from None
+
+@app.post("/api/ui-design/download")
+@app.post("/api/index.py/ui-design/download")
+async def download_ui_design(request: Request, project_token: str = Form(...)):
+    _require_allowed_user(request)
+    context = _ui_context(project_token)
+    try:
+        result = await _ui_results(context)
+        if result["status"] != "ready": raise HTTPException(409, "The design is not ready. Check status first.")
+        data = stitch_export.bundle(result["screens"])
+        return StreamingResponse(io.BytesIO(data), media_type="application/zip",
+            headers={"Content-Disposition": 'attachment; filename="Wooplix_UI_Designs.zip"'})
+    except stitch_client.StitchError as exc:
+        raise HTTPException(exc.status, {"message": str(exc), "code": exc.code}) from None

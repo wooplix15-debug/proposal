@@ -12,3 +12,5 @@ tmp/
 .python-version
 
 sample_outputs/
+
+.venv/
