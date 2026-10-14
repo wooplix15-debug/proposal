@@ -222,12 +222,13 @@ The new document tools use the existing authenticated PHP/Dompdf renderer on
 host access failures. `PDF_RENDER_BASE_URL` can override that URL; its renderer must
 use the same `PDF_RENDER_TOKEN`. The token remains server-side.
 
-### Google Stitch UI design (new branch)
+### Google Stitch UI design
 
 The **Generate UI Design** sidebar option accepts an approved BRD or requirements
-as PDF, DOC/DOCX, TXT, Markdown, or pasted text. It generates one selected screen
-through Google's hosted Stitch MCP server, previews its actual HTML and original
-screenshot, and downloads a ZIP with local HTML, screenshots and an asset manifest.
+as PDF, DOC/DOCX, TXT, Markdown, or pasted text. It asks Google's hosted Stitch MCP
+server to identify and generate the distinct pages required by the brief, not just
+a dashboard. The app previews every returned screen and downloads a ZIP with local
+HTML, screenshots and an asset manifest. One design set supports up to 12 screens.
 Existing Proposal, BRD and individual document agents use their existing workflows.
 
 Local setup:
@@ -246,7 +247,7 @@ OAuth access tokens expire and must be refreshed manually with this configuratio
 The app does not currently implement an OAuth refresh flow.
 
 Open `http://127.0.0.1:8777`, enter an existing workspace access code, select
-**Generate UI Design**, provide the BRD, select a screen and device, then generate.
+**Generate UI Design**, provide the BRD and device, then generate the page set.
 A BRD can be uploaded after it has been reviewed and approved; this feature does
 not itself grant approval. Generation sends its supplied requirements to Google Stitch.
 
@@ -261,7 +262,7 @@ The lightweight `GEMINI_3_5_FLASH_LITE` model is the default. `STITCH_MODEL` can
 select another model supported by your account. Actual quota and billing depend
 on your Stitch account; the integration cannot guarantee that generation is free.
 Generation calls are never automatically retried. **Check status** makes only
-read calls and can retry artifact downloads without generating another screen.
+read calls and can retry artifact downloads without generating another page set.
 If Stitch needs clarification, its message is shown when available; review the
 project in Stitch before requesting another generation.
 

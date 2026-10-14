@@ -39,7 +39,7 @@
       }
       const note=document.createElement('p');note.textContent=screen.offline_complete?'HTML and screenshot assets are bundled for offline viewing.':'Offline screenshot available. HTML export notes: '+screen.warnings.join(' ');section.append(note);previews.append(section);
     });
-    download.hidden=false;message.textContent='Design ready. Review the screen below and download the HTML and screenshots. This is a visual prototype.';
+    download.hidden=false;message.textContent=`Design ready: ${result.screens.length} page${result.screens.length===1?'':'s'} generated. Review them below and download the HTML and screenshots. This is a visual prototype.`;
     return true;
   }
   function lock(value) {designBusy=value;generate.disabled=value||started;check.disabled=value;download.disabled=value;}
@@ -60,7 +60,7 @@
       if(selected) {
         document.querySelector('#documentBadge').textContent='Stitch UI design workspace';
         document.querySelector('#documentTitle').textContent='Generate your UI design.';
-        document.querySelector('#documentDescription').textContent='Upload an approved BRD or client requirements and design one screen with Google Stitch.';
+        document.querySelector('#documentDescription').textContent='Upload an approved BRD or client requirements and generate all required pages with Google Stitch.';
         document.title='Wooplix UI Design';
         try {
           const response=await fetch('/api/ui-design/config',{credentials:'same-origin'});const config=await response.json();
@@ -76,7 +76,7 @@
     lock(true);previews.replaceChildren();download.hidden=true;message.textContent='Connecting to Stitch…';
     try {
       const prepared=await (await request('prepare',data)).json();setToken(prepared.project_token);started=true;lock(true);
-      message.textContent='Stitch is generating one screen. This may take a few minutes. Keep this page open.';
+      message.textContent='Stitch is generating the pages required by your brief. This may take a few minutes. Keep this page open.';
       display(await (await request('generate',tokenData())).json());
     }catch(error){message.textContent=error.message;}
     finally{lock(false);}

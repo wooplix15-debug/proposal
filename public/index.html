@@ -668,7 +668,7 @@
         <div class="project-name-field"><label for="stitchFile">Approved BRD or requirement file</label><input id="stitchFile" name="files" type="file" accept=".pdf,.docx,.doc,.txt,.md"><p>PDF, Word, TXT or Markdown. Up to 4 MB.</p></div>
         <label for="stitchBrief">Or paste the BRD / requirements</label><textarea id="stitchBrief" name="text" rows="8" maxlength="40000" placeholder="Paste the approved requirements for your interface."></textarea>
         <div class="project-name-field"><label for="stitchTitle">Project name (optional)</label><input id="stitchTitle" name="title" maxlength="120"></div>
-        <div class="project-name-field"><label for="stitchScreen">Which screen should we design?</label><input id="stitchScreen" name="screen" maxlength="1000" value="Main dashboard" required><p>One screen per generation keeps quota usage low.</p></div>
+        <p>Stitch will design all pages required by your brief, not only the main dashboard. It will create a separate screen for each page it identifies.</p>
         <label for="stitchDevice">Device</label><select id="stitchDevice" name="device"><option value="DESKTOP">Desktop</option><option value="MOBILE">Mobile</option><option value="TABLET">Tablet</option></select>
         <button class="submit-btn" id="stitchGenerate" type="submit">Generate UI Design →</button>
       </form>

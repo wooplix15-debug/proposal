@@ -818,14 +818,14 @@ def ui_design_config(request: Request):
 @app.post("/api/index.py/ui-design/prepare")
 async def prepare_ui_design(request: Request, files: Optional[List[UploadFile]] = File(None),
                             text: Optional[str] = Form(None), title: str = Form(""),
-                            screen: str = Form("Main dashboard"), device: str = Form("DESKTOP")):
+                            device: str = Form("DESKTOP")):
     _require_allowed_user(request)
     if not stitch_client.configured():
         raise HTTPException(503, "Add STITCH_API_KEY to the server environment before generating designs.")
     if len(files or []) > MAX_FILES:
         raise HTTPException(400, "Upload at most five BRD files.")
-    if len(title) > 120 or not screen.strip() or len(screen) > 1000:
-        raise HTTPException(400, "Enter a project title under 120 characters and a screen description under 1,000 characters.")
+    if len(title) > 120:
+        raise HTTPException(400, "Keep the project title under 120 characters.")
     if device not in {"DESKTOP", "MOBILE", "TABLET"}:
         raise HTTPException(400, "Choose Desktop, Mobile or Tablet.")
     with tempfile.TemporaryDirectory(prefix="wooplix-ui-design-") as work:
@@ -837,7 +837,7 @@ async def prepare_ui_design(request: Request, files: Optional[List[UploadFile]] 
     try:
         project = await stitch_client.create_project(title.strip())
         token = workflow.seal({"ui_design": True, "project_id": project, "brief": brief,
-                               "screen": screen.strip(), "device": device})
+                               "page_scope": "All pages required by the client brief", "device": device})
         return {"project_token": token, "project_id": project}
     except stitch_client.StitchError as exc:
         raise HTTPException(exc.status, {"message": str(exc), "code": exc.code}) from None
@@ -878,9 +878,15 @@ async def generate_ui_design(request: Request, project_token: str = Form(...)):
     _require_allowed_user(request)
     context = _ui_context(project_token)
     try:
-        result = await stitch_client.generate(context["project_id"], context["brief"], context["screen"], context["device"])
+        result = await stitch_client.generate(context["project_id"], context["brief"],
+                                              context.get("page_scope", "All pages required by the client brief"),
+                                              context["device"])
         generated = stitch_client.generated_screens(result)
         if generated:
+            if len(generated) > stitch_client.MAX_GENERATED_SCREENS:
+                raise stitch_client.StitchError(
+                    f"Stitch returned more than {stitch_client.MAX_GENERATED_SCREENS} pages. Split the requirements into smaller design sets.",
+                    "too_many_screens", 422)
             context["screen_names"] = [row["name"] for row in generated]
             project_token = workflow.seal(context)
             completed = {"status":"ready", "screens": await stitch_export.assemble(generated),

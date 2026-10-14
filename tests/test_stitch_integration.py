@@ -66,12 +66,13 @@ class ApiTests(TestCase):
    r=self.web.post('/api/ui-design/prepare',data={'text':'short'})
    self.assertEqual(r.status_code,400);create.assert_not_called()
  def test_prepare_and_generate_use_the_signed_brief(self):
-  context={'ui_design':True,'project_id':'123','brief':'Approved booking BRD','screen':'Dashboard','device':'DESKTOP'}
-  result={'outputComponents':[{'design':{'screens':[{'name':'projects/123/screens/a'}]}}]}
-  row={'html':'<h1>UI</h1>','title':'UI','offline_complete':True,'warnings':[],'screenshot':None}
-  with patch.object(api,'_require_allowed_user'),patch.object(api.workflow,'unseal',return_value=context),patch.object(api.workflow,'seal',return_value='new-token'),patch.object(client,'generate',new_callable=AsyncMock,return_value=result) as generate,patch.object(export,'assemble',new_callable=AsyncMock,return_value=[row]):
+  context={'ui_design':True,'project_id':'123','brief':'Approved booking BRD','page_scope':'All pages required by the client brief','device':'DESKTOP'}
+  result={'outputComponents':[{'design':{'screens':[{'name':'projects/123/screens/a'},{'name':'projects/123/screens/b'}]}}]}
+  rows=[{'html':'<h1>UI</h1>','title':f'Page {n}','offline_complete':True,'warnings':[],'screenshot':None} for n in (1,2)]
+  with patch.object(api,'_require_allowed_user'),patch.object(api.workflow,'unseal',return_value=context),patch.object(api.workflow,'seal',return_value='new-token'),patch.object(client,'generate',new_callable=AsyncMock,return_value=result) as generate,patch.object(export,'assemble',new_callable=AsyncMock,return_value=rows):
    response=self.web.post('/api/ui-design/generate',data={'project_token':'signed'})
-  self.assertEqual(response.status_code,200);self.assertEqual(response.json()['project_token'],'new-token');generate.assert_awaited_once_with('123','Approved booking BRD','Dashboard','DESKTOP')
+  self.assertEqual(response.status_code,200);self.assertEqual(response.json()['project_token'],'new-token');self.assertEqual(len(response.json()['screens']),2)
+  generate.assert_awaited_once_with('123','Approved booking BRD','All pages required by the client brief','DESKTOP')
  def test_generated_screen_reference_survives_export_failure(self):
   context={'ui_design':True,'project_id':'123','brief':'Approved booking BRD','screen':'Dashboard','device':'DESKTOP'}
   result={'outputComponents':[{'design':{'screens':[{'name':'projects/123/screens/a'}]}}]}
@@ -104,4 +105,5 @@ class ClientTests(TestCase):
   error=httpx.HTTPStatusError('sensitive message',request=request,response=httpx.Response(401,request=request))
   mapped=client.classify(error);self.assertEqual(mapped.code,'authentication_failed');self.assertNotIn('sensitive',str(mapped))
  def test_generation_response_extracts_only_screens(self):
-  self.assertEqual(client.generated_screens({'outputComponents':[{'text':'Clarify'},{'design':{'screens':[{'name':'screen'}]}}]}),[{'name':'screen'}])
+  screens=[{'name':'screen-1'},{'name':'screen-2'}]
+  self.assertEqual(client.generated_screens({'outputComponents':[{'text':'Clarify'},{'design':{'screens':screens}}]}),screens)
