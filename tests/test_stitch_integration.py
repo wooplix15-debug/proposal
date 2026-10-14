@@ -48,6 +48,11 @@ class ExportTests(IsolatedAsyncioTestCase):
    self.assertTrue(json.loads(z.read('manifest.json'))[0]['offline_complete'])
 
 class ApiTests(TestCase):
+ def test_stitch_browser_script_is_served_at_vercel_api_route(self):
+  response=TestClient(api.app).get('/api/stitch_ui.js')
+  self.assertEqual(response.status_code,200)
+  self.assertIn('Calling the original handler',response.text)
+
  def setUp(self):
   api._UI_CACHE.clear();self.web=TestClient(api.app)
  def test_access_is_required(self):

@@ -803,6 +803,8 @@ import stitch_client
 import stitch_export
 
 @app.get("/stitch_ui.js")
+@app.get("/api/stitch_ui.js")
+@app.get("/api/index.py/stitch_ui.js")
 def stitch_script():
     return FileResponse(Path(__file__).resolve().parents[1] / "stitch_ui.js", media_type="application/javascript")
 
