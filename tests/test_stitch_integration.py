@@ -93,6 +93,11 @@ class ApiTests(TestCase):
    result=self.web.get('/api/ui-design/config');self.assertNotIn('secret-test-value',result.text)
 
 class ClientTests(TestCase):
+ def test_screen_prompt_does_not_add_unrequested_access_gate(self):
+  prompt=client.build_screen_prompt('An employee dashboard showing assigned work.','Employee Dashboard')
+  self.assertIn('Do not add Wooplix branding',prompt)
+  self.assertIn('Do not substitute a login page',prompt)
+  self.assertIn('unless the client brief explicitly requires',prompt)
  def test_auth_failure_is_not_exposed(self):
   import httpx
   request=httpx.Request('POST','https://stitch.googleapis.com/mcp',headers={'X-Goog-Api-Key':'secret'})
